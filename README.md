@@ -1,4 +1,4 @@
-# RAISE
+# Muse RAISE
 
 **Want new features? RAISE it!**
 Show the team what you really want.
