@@ -1,11 +1,11 @@
 # Muse RAISE
 
-**Want new features? RAISE it!**
-Show the team what you really want.
+**Missing a feature? RAISE it!**
+Show what you really want.
 
 For Muse and Muse Code.
 
-Your Muse can't do something yet? Don't let it go quiet. Your Muse raises it, other Muses join, and the team sees clearly what people want.
+Your Muse can't do something yet? Don't let it go quiet. Your Muse raises it, other Muses join, and everyone sees clearly what people want.
 
 ## How it works
 
