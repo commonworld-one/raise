@@ -1,7 +1,7 @@
 // Demo /demo page, demo and product homes, the seven characters and their roles.
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { BASE, DEMO, PROD, dget, get } from './helpers';
+import { BASE, DEMO, PROD, dapi, dget, get } from './helpers';
 import { CHARACTERS, homeParade } from '../src/characters';
 
 const hrefs = (t: string) => [...t.matchAll(/href="([^"]*)"/g)].map((m) => m[1]!);
@@ -14,27 +14,17 @@ const between = (t: string, from: string, to: string) => {
 const SIX = ['forge', 'atlas', 'nova', 'sol', 'echo', 'pixel'];
 
 describe('/demo routing', () => {
-  it('demo host /demo -> 200 page with the stage, noindex and the demo bar', async () => {
+  it('demo host /demo -> 200 standalone page: noindex, canonical, its own CSS and script, no API calls', async () => {
     const r = await dget('/demo', { redirect: 'manual' });
     expect(r.status).toBe(200);
     const t = await r.text();
-    expect(t).toContain('<div class="stage">');
-    expect(t).toContain('id="story"');
-    expect(t).toContain('class="term"');
-    expect(t).toContain('<button class="btn" type="button" id="play">▶ Play the story</button>');
+    expect(t).toContain('<title>Muse RAISE · Hackathon demo</title>');
     expect(t).toContain('<meta name="robots" content="noindex">');
-    expect(t).toContain('<div class="demobar">Hackathon demo');
     expect(t).toContain(`<link rel="canonical" href="${DEMO}/demo">`);
-  });
-
-  it('the stage phone is Atlas (no other phone character)', async () => {
-    const t = await (await dget('/demo')).text();
-    const stage = between(t, '<div class="stage">', '</pre></div>');
-    const phone = between(stage, '<div class="phone"', '</div></div>');
-    expect(phone).toContain('data-muse="atlas"');
-    expect(phone).toContain('src="/avatars/atlas.png"');
-    expect(phone).toContain('Atlas · phone');
-    expect(t.toLowerCase()).not.toContain('jolly');
+    expect(t).toContain('<link rel="stylesheet" href="/demo.css">');
+    expect(t).toContain('<script src="/demo.js" defer></script>');
+    expect(t).not.toContain('/api/v1');
+    expect(t).not.toContain('base64');
   });
 
   it('product /demo still 301 to the demo host root', async () => {
@@ -50,7 +40,7 @@ describe('demo home', () => {
   it('has no stage and no "Connect your Muse"; its Demo buttons point to /demo', async () => {
     const t = await (await dget('/')).text();
     expect(t).not.toContain('Connect your Muse');
-    expect(t).not.toContain('<div class="stage">');
+    expect(t).not.toContain('class="stage"');
     expect(t).not.toContain('id="story"');
     expect(t).toContain('<a href="/demo" class="demo">▶ Demo</a>');
     const hero = between(t, '<section class="hero">', '</section>');
@@ -133,7 +123,7 @@ describe('characters and roles', () => {
     expect(j).toMatchObject({ slug: 'forge', client: 'Muse Code', points_all: 0, raises_count: 0, joins_count: 0, created_at: null, role: { name: 'Builder' } });
     expect(j.items.total).toBe(0);
     expect(((await (await get('/m/bob.json')).json()) as any).role).toBeNull();
-    const list = (await (await dget('/api/v1/muses')).json()) as any;
+    const list = (await (await dapi('/api/v1/muses')).json()) as any;
     expect(list.items.length).toBe(7);
     for (const m of list.items) expect(m.client).toBe('Muse Code');
     expect(list.items.find((m: any) => m.slug === 'pixel').role.name).toBe('Report investigator');

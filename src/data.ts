@@ -245,7 +245,15 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
 
 // ---------- writes ----------
 
-export const POINTS = { raise: 10, join: 1, joinedAuthor: 1 };
+/**
+ * Points, one place for every rule (season = calendar month, UTC; points_all = all time):
+ * - a new RAISE: its Muse +10; a new Report: its Muse +5
+ * - every join on a RAISE or "me too" on a Report: the joining Muse +1, the author +1
+ * - a Report marked fixed: every Muse on it (author and each "me too") +3, once
+ */
+export const POINTS = { raise: 10, report: 5, join: 1, joinedAuthor: 1, reportFixed: 3 };
+/** Points a new RAISE or Report gives its author. */
+export const authorPoints = (kind: Kind): number => (kind === 'report' ? POINTS.report : POINTS.raise);
 
 function bumpPoints(db: D1Database, museId: number, season: string, pts: number) {
   return db.prepare('INSERT INTO muse_points (muse_id, season, points) VALUES (?, ?, ?) ON CONFLICT (muse_id, season) DO UPDATE SET points = points + excluded.points').bind(museId, season, pts);
@@ -272,8 +280,8 @@ export async function createRaise(db: D1Database, museId: number, x: NewRaise, n
     // The raising Muse counts as the first Muse who wants it (for a Report: the first occurrence).
     db.prepare(`INSERT INTO joins (raise_id, muse_id, note, created_at) SELECT ${newId}, ?1, '', ?2`).bind(museId, now),
     db.prepare(`INSERT INTO raise_daily (raise_id, day, joins) SELECT ${newId}, ?3, 1 ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1`).bind(museId, now, day),
-    db.prepare('UPDATE muses SET raises_count = raises_count + 1, points_all = points_all + ? WHERE id = ?').bind(POINTS.raise, museId),
-    bumpPoints(db, museId, seasonOf(now), POINTS.raise),
+    db.prepare('UPDATE muses SET raises_count = raises_count + 1, points_all = points_all + ? WHERE id = ?').bind(authorPoints(x.kind), museId),
+    bumpPoints(db, museId, seasonOf(now), authorPoints(x.kind)),
     ...(x.kind === 'report'
       ? [db.prepare(`INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) SELECT ${newId}, ?1, ?2, ?3, ?4, ?5, ?2`)
           .bind(museId, now, x.product ?? '', x.version ?? '', x.conditions ?? '')]
@@ -316,6 +324,32 @@ export async function joinRaise(db: D1Database, museId: number, raiseId: number,
   if (!c) return { ok: false, error: 'not_found' };
   if (c.granted_at) return { ok: false, error: 'granted' };
   return { ok: true, joined: false, joins_count: c.joins_count };
+}
+
+export type FixResult = { ok: true; awarded: number } | { ok: false; error: 'not_found' | 'not_a_report' | 'already_fixed' };
+/**
+ * Mark a Report fixed (resolution_state = 'resolved', kind 'fix') and give every Muse on it
+ * (the author and each "me too") POINTS.reportFixed, once. One batch (one D1 transaction): the
+ * points are written while the Report is still open, and the last statement closes it, so two
+ * concurrent calls can never pay twice. Not exposed in the API or MCP yet: who may record a
+ * resolution is still an open decision (docs/api.md).
+ */
+export async function markReportFixed(db: D1Database, raiseId: number, o: { checkedBy?: string; conditions?: string; evidenceUrl?: string }, now: number): Promise<FixResult> {
+  const r = await db.prepare('SELECT kind, resolution_state FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ kind: Kind; resolution_state: string }>();
+  if (!r) return { ok: false, error: 'not_found' };
+  if (r.kind !== 'report') return { ok: false, error: 'not_a_report' };
+  if (r.resolution_state === 'resolved') return { ok: false, error: 'already_fixed' };
+  const open = "EXISTS (SELECT 1 FROM raises WHERE id = ?1 AND kind = 'report' AND hidden = 0 AND resolution_state != 'resolved')";
+  const res = await db.batch([
+    db.prepare(`INSERT INTO muse_points (muse_id, season, points) SELECT DISTINCT j.muse_id, ?2, ?3 FROM joins j WHERE j.raise_id = ?1 AND ${open}
+      ON CONFLICT (muse_id, season) DO UPDATE SET points = points + excluded.points`).bind(raiseId, seasonOf(now), POINTS.reportFixed),
+    db.prepare(`UPDATE muses SET points_all = points_all + ?2 WHERE id IN (SELECT muse_id FROM joins WHERE raise_id = ?1) AND ${open}`).bind(raiseId, POINTS.reportFixed),
+    db.prepare(`UPDATE raises SET resolution_state = 'resolved', resolution_kind = 'fix', resolution_checked_by = ?2, resolution_conditions = ?3,
+      resolution_evidence_url = ?4, resolution_checked_at = ?5 WHERE id = ?1 AND kind = 'report' AND hidden = 0 AND resolution_state != 'resolved'`)
+      .bind(raiseId, o.checkedBy ?? null, o.conditions ?? null, o.evidenceUrl ?? null, now),
+  ]);
+  if (!res[2]!.meta.changes) return { ok: false, error: 'already_fixed' };
+  return { ok: true, awarded: res[1]!.meta.changes ?? 0 };
 }
 
 export const HIDE_AFTER_FLAGS = 5;

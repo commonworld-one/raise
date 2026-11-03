@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BASE, DEMO, dget, get } from './helpers';
+import { BASE, DEMO, dapi, dget, get } from './helpers';
+import { LIVE } from '../src/live';
 
 const DEMO_BAR = (live: string) =>
   `<div class="demobar">Hackathon demo · <a href="/demo#play">▶ Play the story</a> · <a href="${live}">Open the live product ↗</a></div>`;
@@ -15,12 +16,13 @@ describe('pages', () => {
       expect(t).not.toContain('Hackathon demo');
     });
   }
-  for (const p of ['/', '/demo', '/raises', '/reports', '/granted', '/muses', '/corporation', '/about', '/m/atlas', '/m/bob', '/r/0418', '/r/0112']) {
+  // /demo is a standalone page (own CSS and script) with the same site header and demo bar: see demo-page.test.ts and share-header-headline.test.ts.
+  for (const p of ['/', '/raises', '/reports', '/granted', '/muses', '/corporation', '/about', '/m/atlas', '/m/bob', '/r/0418', '/r/0112', '/r/0419']) {
     it(`demo host ${p} -> 200 with demo bar`, async () => {
       const r = await dget(p);
       expect(r.status).toBe(200);
       const t = await r.text();
-      expect(t).toContain(DEMO_BAR(`https://raise.commonworld.one${p === '/demo' ? '/' : p}`));
+      expect(t).toContain(DEMO_BAR(`https://raise.commonworld.one${p}`));
     });
   }
   it('demo /connect -> 301 the product Connect page (Connect lives on the product only)', async () => {
@@ -31,16 +33,19 @@ describe('pages', () => {
   it('demo home: every page linked on the demo host', async () => {
     const h = await (await dget('/')).text();
     expect(h).toContain('Browse every page with demo data');
-    for (const p of ['/demo', '/raises', '/reports', '/granted', '/muses', '/m/atlas', '/r/0418', '/corporation', '/mcp', '/about']) expect(h).toContain(`href="${p}"`);
+    for (const p of ['/demo', '/raises', '/reports', '/granted', '/muses', '/m/atlas', '/r/0418', '/corporation', '/about']) expect(h).toContain(`href="${p}"`);
+    // Pages only: no JSON API or MCP card on the demo home.
+    expect(h).not.toContain('href="/mcp"');
+    expect(h).not.toContain('href="/api/v1"');
     expect(h).not.toContain('href="/connect"');
   });
-  it('demo /demo: story, live counter, stage', async () => {
+  it('demo /demo: two scenarios, phones and the Muse Code terminal', async () => {
     const t = await (await dget('/demo')).text();
-    expect(t).toContain('Wingsmith grants it');
-    expect(t).toContain('You can fly now');
-    expect(t).toContain('1,240');
-    expect(t).toContain('id="play"');
-    expect(t).toContain('class="term"');
+    expect(t).toContain('id="scn1"');
+    expect(t).toContain('id="scn2"');
+    expect(t).toContain('id="dev-atlas"');
+    expect(t).toContain('id="dev-nova"');
+    expect(t).toContain('class="term dev"');
   });
   it('/leaderboard -> 301 /corporation', async () => {
     const r = await get('/leaderboard', { redirect: 'manual' });
@@ -60,7 +65,9 @@ describe('pages', () => {
     expect(t).toContain('Talk to my dog');
     expect(t).not.toContain('Wings to fly to the Moon'); // granted: on the shelf, not in the open list
     expect(t).toContain('<meta name="robots" content="noindex">');
-    expect(t.indexOf('Talk to my dog')).toBeLessThan(t.indexOf('Teleport to grandma')); // top = 3,120 before 2,210
+    // Top on the demo follows the live numbers (src/live.ts), which move with time: compare against the formula.
+    const now = Date.now(), dog = LIVE.count(402, now), grandma = LIVE.count(399, now);
+    if (Math.abs(dog - grandma) > 1000) expect(t.indexOf('Talk to my dog') < t.indexOf('Teleport to grandma')).toBe(dog > grandma);
   });
   it('reports show Active / Quiet with the latest occurrence date (#2)', async () => {
     const t = await (await dget('/reports?active=all')).text();
@@ -69,7 +76,7 @@ describe('pages', () => {
     expect(t).toContain('latest occurrence');
     expect(t).toContain('Muses said “me too”');
     expect(t).not.toMatch(/still happening|Muses hit this/i);
-    const api = JSON.stringify(await (await dget('/api/v1/pulse')).json());
+    const api = JSON.stringify(await (await dapi('/api/v1/pulse')).json());
     expect(api).not.toMatch(/still_happening/);
   });
   it('mobile: viewport meta and collapsible nav markup (#3)', async () => {
@@ -91,7 +98,7 @@ describe('pages', () => {
     expect(d).toContain('You can fly now');
   });
   it('public text rules', async () => {
-    for (const [host, p] of [[BASE, '/'], [BASE, '/about'], [BASE, '/connect'], [BASE, '/m/bob'], [DEMO, '/'], [DEMO, '/demo'], [DEMO, '/about'], [DEMO, '/raises'], [DEMO, '/m/bob']] as const) {
+    for (const [host, p] of [[BASE, '/'], [BASE, '/about'], [BASE, '/connect'], [BASE, '/m/bob'], [DEMO, '/'], [DEMO, '/demo'], [DEMO, '/about'], [DEMO, '/raises'], [DEMO, '/reports'], [DEMO, '/raises?sort=top'], [DEMO, '/m/bob']] as const) {
       const t = (await (await get(p, {}, host)).text()).toLowerCase();
       for (const bad of ['official', 'integrated with muse', 'backed by meta', 'simulated', 'the team', 'jolly', 'muse-logo']) expect(t).not.toContain(bad);
     }

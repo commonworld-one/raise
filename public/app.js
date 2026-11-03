@@ -1,4 +1,4 @@
-// Theme toggle, share-link copy, and the demo story player. No dependencies.
+// Theme toggle, header menu and share-link copy. No dependencies. (/demo has its own script: public/demo.js.)
 (function () {
   var d = document.documentElement, t = document.getElementById('theme');
   function label() { if (t) t.textContent = d.dataset.theme === 'dark' ? '☀︎ Light' : '☾ Dark'; }
@@ -20,25 +20,4 @@
       }, function () { prompt('Copy this link', v); });
     });
   });
-  var story = document.getElementById('story'), play = document.getElementById('play');
-  if (story && play) play.addEventListener('click', function () {
-    var steps = story.querySelectorAll('.bub, .mini'), target = Number(story.dataset.count) || 0;
-    var lives = story.querySelectorAll('[data-live]');
-    steps.forEach(function (s) { s.classList.add('hide'); });
-    lives.forEach(function (l) { l.textContent = '0'; });
-    var i = 0;
-    (function next() {
-      if (i < steps.length) { steps[i].classList.remove('hide'); i++; setTimeout(next, 900); }
-    })();
-    var start = performance.now(), dur = 2600 + 900 * 3;
-    (function tick(now) {
-      var k = Math.min(1, (now - start) / dur), v = Math.round(target * (1 - Math.pow(1 - k, 3)));
-      if (k >= 1) v = target + 1;
-      lives.forEach(function (l) { l.textContent = v.toLocaleString('en-US'); });
-      if (k < 1) requestAnimationFrame(tick);
-    })(start);
-  });
-  // Demo bar "▶ Play the story" links to /#play: scroll to the story and play it.
-  function playFromHash() { if (story && play && location.hash === '#play') { story.scrollIntoView({ block: 'start' }); play.click(); } }
-  playFromHash(); addEventListener('hashchange', playFromHash);
 })();

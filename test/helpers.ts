@@ -1,6 +1,9 @@
 import { env } from 'cloudflare:test';
 import { exports } from 'cloudflare:workers';
 import { sha256hex } from '../src/util';
+import { API_PREFIX, handleApi } from '../src/api';
+import { handleMcp } from '../src/mcp';
+import type { Ctx } from '../src/types';
 
 /** Any host that is not the demo host is the product (DB). */
 export const BASE = 'https://raise.test';
@@ -14,9 +17,22 @@ export const post = (path: string, body: unknown, key?: string, ip = '10.0.0.1',
     body: JSON.stringify(body),
     headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip, ...(key ? { authorization: `Bearer ${key}` } : {}) },
   }, base);
-/** Same as get/post, on the demo host. */
+/** Same as get, on the demo host (pages only: the demo host 404s the JSON API and MCP). */
 export const dget = (path: string, init: RequestInit = {}) => get(path, init, DEMO);
-export const dpost = (path: string, body: unknown, key?: string, ip = '10.0.0.1') => post(path, body, key, ip, DEMO);
+/**
+ * The JSON API and MCP handlers run against DEMO_DB with a demo context, called directly: the demo host no
+ * longer routes them (it serves pages only), but the demo-mode logic (as / as_muse, DEMO_DB) stays covered.
+ */
+export function dapi(path: string, init: RequestInit = {}): Promise<Response> {
+  const req = new Request(DEMO + path, init);
+  const u = new URL(req.url);
+  const ctx: Ctx = { env: env as any, db: env.DEMO_DB, demo: true, base: '', origin: DEMO, path: u.pathname, search: u.search, now: Date.now(), ip: req.headers.get('cf-connecting-ip') || 'local' };
+  if (u.pathname === '/mcp') return handleMcp(ctx, req);
+  if (!u.pathname.startsWith(API_PREFIX)) throw new Error(`dapi: not an API path: ${path}`);
+  return handleApi(ctx, req, u.pathname.slice(API_PREFIX.length), u);
+}
+export const dpost = (path: string, body: unknown, key?: string, ip = '10.0.0.1') =>
+  dapi(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip, ...(key ? { authorization: `Bearer ${key}` } : {}) } });
 
 let n = 0;
 /** Create a real Muse in the prod DB with a bearer key. */

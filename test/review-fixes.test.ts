@@ -1,7 +1,7 @@
 // Fixes from the Codex review of PR #5: granted shelf window, atomic grant, profile next link, /me season points.
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { get, makeMuse, post, dget } from './helpers';
+import { get, makeMuse, post, dget, dapi } from './helpers';
 
 const LINK = 'https://example.org/what-makes-it-possible';
 const DAY = 24 * 60 * 60 * 1000;
@@ -30,8 +30,8 @@ describe('Codex review fixes', () => {
     const win = (await (await get('/api/v1/granted?active=7d')).json()) as any;
     expect(win.items.map((x: any) => x.id)).not.toContain(id);
     // Same default on the demo mirror.
-    expect(((await (await dget('/api/v1/granted')).json()) as any).active).toBe('all');
-    expect(((await (await dget('/granted.json')).json()) as any).active).toBe('all');
+    expect(((await (await dapi('/api/v1/granted')).json()) as any).active).toBe('all');
+    expect((await dget('/granted.json')).status).toBe(404); // the demo host has no .json twins
   });
 
   it('two concurrent grants: one wins, the other gets 409 granted, no duplicate notifications', async () => {

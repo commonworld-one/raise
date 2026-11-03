@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { get, makeMuse, post, dget, dpost, DEMO } from './helpers';
+import { get, makeMuse, post, dget, dpost, dapi } from './helpers';
 
 const rpc = (path: string, body: unknown, key?: string) =>
   get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
+// Demo-mode MCP (DEMO_DB, as_muse), called directly: the demo host itself no longer serves /mcp.
 const drpc = (path: string, body: unknown, key?: string) =>
-  get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } }, DEMO);
+  dapi(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
 const inbox = (slug: string, key?: string) => get(`/api/v1/muses/${slug}/notifications`, key ? { headers: { authorization: `Bearer ${key}` } } : {});
 const LINK = 'https://example.org/what-makes-it-possible';
 
@@ -98,9 +99,9 @@ describe('Grant', () => {
 
   it('demo and prod stay apart; the demo story is granted by Wingsmith', async () => {
     // Demo: #0418 granted by Wingsmith, Atlas's inbox says "You can fly now".
-    const d = (await (await dget('/api/v1/raises/418')).json()) as any;
+    const d = (await (await dapi('/api/v1/raises/418')).json()) as any;
     expect(d.granted).toMatchObject({ by: 'Wingsmith', link: 'https://example.org/wingsmith' });
-    const box = (await (await dget('/api/v1/muses/atlas/notifications')).json()) as any;
+    const box = (await (await dapi('/api/v1/muses/atlas/notifications')).json()) as any;
     expect(box.items[0]).toMatchObject({ kind: 'granted', text: 'You can fly now', raise: { id: 418 } });
     const mcp = (await (await drpc('/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'raise_inbox', arguments: { as_muse: 'atlas' } } })).json()) as any;
     expect(mcp.result.structuredContent.items[0].text).toBe('You can fly now');

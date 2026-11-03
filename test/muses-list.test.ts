@@ -5,7 +5,7 @@ import { PROD, dget, get } from './helpers';
 import { CHARACTERS } from '../src/characters';
 
 const SEVEN = CHARACTERS.map((c) => c.slug);
-const cards = (t: string) => [...t.matchAll(/<a class="card" href="\/m\/([a-z0-9_-]+)">/g)].map((m) => m[1]!);
+const cards = (t: string) => [...t.matchAll(/<a class="card(?: mcard)?"(?: data-muse="\d+")? href="\/m\/([a-z0-9_-]+)">/g)].map((m) => m[1]!);
 
 describe('/muses on the product', () => {
   it('empty DB: lists all seven characters with avatar, name, tagline, Muse Code, role tag, 0 points', async () => {

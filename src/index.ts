@@ -9,6 +9,8 @@ import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
 import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
 import { characterMuse } from './characters';
+import { applyLive, cardWeek, isLive } from './live';
+import { demoPage } from './stage';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -55,6 +57,9 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   }
   const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now: Date.now(), ip };
 
+  // The demo host serves human pages only: no JSON API, no MCP, no .json/.md twins. Those live on the product.
+  if (demo && isMachinePath(path)) return demoNoApi(ctx, req, path);
+
   if (path === API_PREFIX || path.startsWith(API_PREFIX + '/')) return handleApi(ctx, req, path.slice(API_PREFIX.length), u);
   if (path === '/mcp') {
     if (req.method === 'GET' && (req.headers.get('accept') || '').includes('text/html'))
@@ -84,7 +89,9 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, now);
     if (ctx.demo) {
       // Demo home: hero with the parade and "▶ See it in action" (-> /demo), the demo lists, every demo page.
-      return html(lay('Hackathon demo', '/', V.demoHomePage(ctx, { hot: hot.items, happening: happening.items })));
+      // The lists use the same live formula as /raises and /reports (src/live.ts); the headline counters add up the cards.
+      ctx.cards = await demoCards(ctx.db);
+      return html(lay('Hackathon demo', '/', V.demoHomePage(ctx, { hot: applyLive(ctx, hot.items, now), happening: applyLive(ctx, happening.items, now) })));
     }
     const season = seasonOf(now);
     const lb = await leaderboard(ctx.db, season, 1);
@@ -93,8 +100,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   }
   if (path === '/demo') {
     // Only the demo host gets here (see the /demo routing above): the story and the stage.
-    const r = await getRaise(ctx.db, 418, ctx.now);
-    return html(lay('See it in action', '/demo', V.demoLanding(ctx, r?.joins_count ?? 0, r?.spark ?? [])));
+    // A standalone page (public/demo.css, public/demo.js): the two scenarios, no database reads.
+    return html(demoPage(ctx));
   }
 
   // Lists: /raises, /reports, /granted (+ /page/N/, /page/N.json, /page/N.md, root .json/.md)
@@ -114,10 +121,16 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const title = list === 'raises' ? 'RAISEs' : list === 'reports' ? 'Reports' : 'Granted';
     if (twin === 'md') return cached(md(V.listMd(ctx, title, r)));
     let body: string;
-    if (list === 'granted') body = V.granted(ctx, u, r);
+    if (list === 'granted') {
+      if (ctx.demo) ctx.cards = await demoCards(ctx.db);
+      body = V.granted(ctx, u, { ...r, items: applyLive(ctx, r.items, ctx.now) });
+    }
     else {
       const cats = kind === 'raise' ? ['Capability', 'App or service'] : await reportAreas(ctx.db);
-      body = V.catalog(ctx, kind!, u, r, cats);
+      // Demo host: live numbers from the formula (src/live.ts), no writes; "Top" follows them. The product keeps stored counts.
+      const items = applyLive(ctx, r.items, ctx.now);
+      if (ctx.demo && params.sort === 'top') items.sort((a, b) => b.joins_count - a.joins_count);
+      body = V.catalog(ctx, kind!, u, { ...r, items }, cats);
     }
     return cached(html(lay(n > 1 ? `${title} · page ${n}` : title, `/${list}`, body, { alternate: `${ctx.origin}${root}/page/${n}.json${u.search}` })));
   }
@@ -128,6 +141,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const r = await listMuses(ctx.db, { ...museParams(queryObj(u)), page: n }, ctx.now);
     if (n > 1 && !r.items.length) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
     if (m[2] === '.json') return cached(json(pageJson(ctx, r, (x) => museJson(ctx, x), r.hasMore ? `${ctx.origin}${ctx.base}/muses/page/${n + 1}.json${u.search}` : null, { list: 'muses' })));
+    if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     return cached(html(lay('Meet the Muses', '/muses', V.muses(ctx, u, r))));
   }
 
@@ -135,6 +149,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (m) {
     // The seven characters always have a profile, with zero numbers when the database has no row (product).
     const muse = (await getMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!);
+    if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     if (!muse) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
     const n = page(m[2]);
     const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.now);
@@ -143,7 +158,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
       const next = items.hasMore ? `${ctx.origin}${ctx.base}/m/${muse.slug}/page/${n + 1}.json` : null;
       return json({ ...museJson(ctx, muse), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), next) });
     }
-    return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, items)));
+    return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, { ...items, items: applyLive(ctx, items.items, ctx.now) })));
   }
 
   m = /^\/r\/(\d{1,9})(\.json|\.md)?$/.exec(path);
@@ -156,7 +171,12 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (m[2] === '.md') return md(V.raiseMd(ctx, r, checks));
     if (m[1] !== pad(id)) return redirectTo(ctx, `${ctx.base}/r/${pad(id)}`);
     const joiners = await getJoiners(ctx.db, id);
-    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, r, joiners, checks), { description: r.body.slice(0, 160) || r.title }));
+    // Demo host: the card's numbers come from the same formula as its row in the lists (src/live.ts); the product keeps stored counts.
+    const card = isLive(ctx, r) ? { ...applyLive(ctx, [r], ctx.now)[0]!, week: cardWeek(id, ctx.now) } : r;
+    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, card, joiners, checks), {
+      description: r.body.slice(0, 160) || r.title,
+      share: { title: `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(id)} · ${r.title}`, type: 'article', ...(ctx.demo ? V.OG_STORY[id] : undefined) },
+    }));
   }
 
   if (path === '/corporation') {
@@ -169,6 +189,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
       const top = (await leaderboard(ctx.db, s, 1))[0];
       if (top) hall.push({ season: s, top });
     }
+    if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     return cached(html(lay('Muse Corporation', '/corporation', V.corporation(ctx, season, live, all, lb, hall))));
   }
   // Connecting a Muse happens on the product only; the demo host sends /connect there.
@@ -177,6 +198,28 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (path === '/about') return html(lay('About', '/about', V.about(ctx)));
 
   return notFound(ctx, 'html');
+}
+
+/** JSON API, MCP and the .json/.md twins of the pages: machine paths the demo host does not serve. */
+export function isMachinePath(path: string): boolean {
+  return path === API_PREFIX || path.startsWith(API_PREFIX + '/') || path === '/mcp' || path.startsWith('/mcp/') || /\.(json|md)$/.test(path);
+}
+
+/** Demo host, machine path: 404 with a short pointer to the product, which has the API and MCP. */
+function demoNoApi(ctx: Ctx, req: Request, path: string): Response {
+  const api = productUrl(ctx.env, API_PREFIX), mcp = productUrl(ctx.env, '/mcp');
+  const message = 'The demo has pages only. The JSON API and MCP are on the live product.';
+  const headers = { 'x-robots-tag': 'noindex', 'cache-control': 'no-store' };
+  const wantsHtml = (req.method === 'GET' || req.method === 'HEAD') && (req.headers.get('accept') || '').includes('text/html') && !/\.(json|md)$/.test(path);
+  if (wantsHtml)
+    return html(V.layout(ctx, { title: 'Not on the demo', path: '', noindex: true, body: V.demoNoApi(api, mcp) }), 404, headers);
+  return json({ error: 'not_found', message, api, mcp }, { status: 404, headers });
+}
+
+/** Demo host: every visible card, for the headline counters that add up the cards' own numbers. Read only. */
+async function demoCards(db: D1Database): Promise<NonNullable<Ctx['cards']>> {
+  const r = await db.prepare('SELECT id, joins_count, granted_at, muse_id FROM raises WHERE hidden = 0 LIMIT 1000').all<{ id: number; joins_count: number; granted_at: number | null; muse_id: number }>();
+  return r.results.map((x) => ({ id: x.id, joins_count: x.joins_count, granted: x.granted_at != null, muse_id: x.muse_id }));
 }
 
 async function reportAreas(db: D1Database): Promise<string[]> {
