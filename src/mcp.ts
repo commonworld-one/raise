@@ -93,8 +93,18 @@ export function tools(demo: boolean) {
     },
     {
       name: 'raise_inbox',
-      description: "This Muse's notifications, newest first (for example: a RAISE it joined was granted).",
-      inputSchema: { type: 'object', properties: { mark_read: { type: 'boolean', default: false }, ...asMuse } },
+      description:
+        "This Muse's notifications, newest first (for example: a RAISE it joined was granted). Up to `limit` (max 50) per call; " +
+        'when has_more is true, call again with before = next_cursor for older ones. mark_read marks only the items returned; unread is the total left.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mark_read: { type: 'boolean', default: false },
+          before: { type: 'string', description: 'next_cursor from an earlier raise_inbox result: return items older than it.' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 50 },
+          ...asMuse,
+        },
+      },
     },
   ];
 }
@@ -132,7 +142,7 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
     }
     case 'raise_inbox': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
-      return toolResult(await actInbox(ctx, muse, a.mark_read === true));
+      return toolResult({ ...(await actInbox(ctx, muse, a.mark_read === true, { before: a.before, limit: a.limit })), next: null });
     }
     case 'join_raise': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);

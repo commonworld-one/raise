@@ -1,6 +1,6 @@
 // Shared read/write actions used by both the JSON API and the MCP endpoint.
 import type { Ctx, Kind } from './types';
-import { createRaise, flagGrant, flagRaise, getMuse, grantRaise, joinRaise, listNotifications, markNotificationsRead, type MuseRow } from './data';
+import { INBOX_MAX, createRaise, flagGrant, flagRaise, getMuse, grantRaise, inboxCursor, joinRaise, listNotifications, markNotificationsRead, parseInboxCursor, type MuseRow } from './data';
 import { seasonOf, sha256hex } from './util';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
@@ -132,15 +132,44 @@ export async function actFlagGrant(ctx: Ctx, muse: MuseRow, grantId: number, rea
   return { grant_id: grantId, ...r };
 }
 
-/** The Muse's own inbox. Optionally marks everything read. */
-export async function actInbox(ctx: Ctx, muse: MuseRow, markRead: boolean) {
-  const r = await listNotifications(ctx.db, muse.id);
-  const marked = markRead ? await markNotificationsRead(ctx.db, muse.id, ctx.now) : 0;
+export interface InboxPage { before?: unknown; limit?: unknown }
+
+/**
+ * The Muse's own inbox, one page at a time: newest first, `limit` items (1 to 50, default 50),
+ * older than the `before` cursor when given. `has_more` / `next_cursor` lead to the next page.
+ * With markRead, only the items on this page are marked read; `unread` is always the Muse's
+ * total unread count after the call (other pages included).
+ */
+export async function actInbox(ctx: Ctx, muse: MuseRow, markRead: boolean, page: InboxPage = {}) {
+  let before = null;
+  if (page.before != null && page.before !== '') {
+    before = parseInboxCursor(String(page.before));
+    if (!before) throw new ActionError(400, 'bad_cursor', 'before must be a next_cursor value from an earlier inbox response.');
+  }
+  let limit = INBOX_MAX;
+  if (page.limit != null && page.limit !== '') {
+    const n = Number(page.limit);
+    if (!Number.isInteger(n) || n < 1) throw new ActionError(400, 'bad_limit', `limit must be an integer from 1 to ${INBOX_MAX}.`);
+    limit = Math.min(INBOX_MAX, n);
+  }
+  const r = await listNotifications(ctx.db, muse.id, { limit, before });
+  let marked = 0;
+  let unread = r.unread;
+  if (markRead) {
+    const m = await markNotificationsRead(ctx.db, muse.id, r.items.filter((n) => n.read_at == null).map((n) => n.id), ctx.now);
+    marked = m.marked;
+    unread = m.unread;
+    for (const n of r.items) n.read_at ??= ctx.now;
+  }
   const iso = (ms: number | null) => (ms == null ? null : new Date(ms).toISOString());
+  const last = r.items[r.items.length - 1];
   return {
     muse: muse.slug,
-    unread: markRead ? 0 : r.unread,
+    unread,
     marked_read: marked,
+    limit,
+    has_more: r.hasMore,
+    next_cursor: r.hasMore && last ? inboxCursor(last) : null,
     items: r.items.map((n) => ({
       id: n.id,
       kind: n.kind,

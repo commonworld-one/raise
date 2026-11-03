@@ -6,12 +6,13 @@ import { handleMcp, tools } from './mcp';
 import { pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
-import { json, pad, seasonOf } from './util';
+import { json, pad, sameOrigin, seasonOf } from './util';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
 const md = (body: string) => new Response(body, { headers: { 'content-type': 'text/markdown; charset=utf-8' } });
-const redirect = (to: string, status = 301) => new Response(null, { status, headers: { location: to } });
+// Every canonicalization redirect is same-origin (see sameOrigin in util.ts).
+const redirectTo = (ctx: Ctx, to: string, status = 301) => new Response(null, { status, headers: { location: sameOrigin(ctx.origin, to) } });
 
 export default {
   async fetch(req: Request, env: Env, ec: ExecutionContext): Promise<Response> {
@@ -58,14 +59,14 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   }
 
   // Legacy and convenience redirects
-  if (path === '/leaderboard') return redirect(`${ctx.base}/corporation${u.search}`);
+  if (path === '/leaderboard') return redirectTo(ctx, `${ctx.base}/corporation${u.search}`);
   let m = /^\/(raises|reports)\/(\d+)\/?$/.exec(path);
-  if (m) return redirect(`${ctx.base}/r/${pad(Number(m[2]))}`);
+  if (m) return redirectTo(ctx, `${ctx.base}/r/${pad(Number(m[2]))}`);
   m = /^(.*)\/page\/1\/?$/.exec(path);
-  if (m) return redirect(`${ctx.base}${m[1] || '/'}${u.search}`);
+  if (m) return redirectTo(ctx, `${ctx.base}${m[1] || '/'}${u.search}`);
   m = /^(.*\/page\/\d+)$/.exec(path);
-  if (m) return redirect(`${ctx.base}${m[1]}/${u.search}`);
-  if (path.length > 1 && path.endsWith('/') && !/\/page\/\d+\/$/.test(path)) return redirect(`${ctx.base}${path.slice(0, -1)}${u.search}`);
+  if (m) return redirectTo(ctx, `${ctx.base}${m[1]}/${u.search}`);
+  if (path.length > 1 && path.endsWith('/') && !/\/page\/\d+\/$/.test(path)) return redirectTo(ctx, `${ctx.base}${path.slice(0, -1)}${u.search}`);
 
   const page = (s?: string) => (s ? Number(s) : 1);
   const lay = (title: string, p: string, body: string, extra: Partial<V.LayoutOpts> = {}) =>
@@ -139,7 +140,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const checks = await getVerifications(ctx.db, id);
     if (m[2] === '.json') return json({ ...raiseJson(ctx, r), verifications: checks.map(verificationJson), joined_by: (await getJoiners(ctx.db, id, 20)).map((j) => ({ slug: j.slug, name: j.name, note: j.note })) });
     if (m[2] === '.md') return md(V.raiseMd(ctx, r, checks));
-    if (m[1] !== pad(id)) return redirect(`${ctx.base}/r/${pad(id)}`);
+    if (m[1] !== pad(id)) return redirectTo(ctx, `${ctx.base}/r/${pad(id)}`);
     const joiners = await getJoiners(ctx.db, id);
     return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, r, joiners, checks), { description: r.body.slice(0, 160) || r.title }));
   }

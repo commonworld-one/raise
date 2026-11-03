@@ -32,12 +32,12 @@ describe('pages', () => {
   it('/leaderboard -> 301 /corporation', async () => {
     const r = await get('/leaderboard', { redirect: 'manual' });
     expect(r.status).toBe(301);
-    expect(r.headers.get('location')).toBe('/corporation');
+    expect(r.headers.get('location')).toBe('https://raise.test/corporation');
   });
   it('/r/418 -> 301 /r/0418, unknown -> 404', async () => {
     const r = await get('/demo/r/418', { redirect: 'manual' });
     expect(r.status).toBe(301);
-    expect(r.headers.get('location')).toBe('/demo/r/0418');
+    expect(r.headers.get('location')).toBe('https://raise.test/demo/r/0418');
     expect((await get('/r/999999')).status).toBe(404);
     expect((await get('/nope')).status).toBe(404);
   });

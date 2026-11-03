@@ -101,7 +101,7 @@ describe('pagination', () => {
     expect(p1.items.length + p2.items.length).toBe(p1.total);
     const r = await get('/raises/page/1/?active=all', { redirect: 'manual' });
     expect(r.status).toBe(301);
-    expect(r.headers.get('location')).toBe('/raises?active=all');
+    expect(r.headers.get('location')).toBe('https://raise.test/raises?active=all');
     expect((await get('/raises/page/2/?active=all')).status).toBe(200);
     expect((await get('/raises/page/99/?active=all')).status).toBe(404);
     expect((await get('/raises/page/99.json?active=all')).status).toBe(404);

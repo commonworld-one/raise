@@ -14,6 +14,13 @@ function nextUrl(ctx: Ctx, u: URL, page: number) {
   return n.toString().replace(u.origin, ctx.origin);
 }
 
+/** Next inbox page: same path and query, `before` set to the cursor. */
+function inboxNext(ctx: Ctx, u: URL, cursor: string) {
+  const n = new URL(u.toString());
+  n.searchParams.set('before', cursor);
+  return n.toString().replace(u.origin, ctx.origin);
+}
+
 export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): Promise<Response> {
   try {
     const q = queryObj(u);
@@ -45,7 +52,8 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       }
       if (seg[0] === 'muses' && seg.length === 3 && seg[2] === 'notifications') {
         const me = await ownMuse(ctx, req, seg[1]!);
-        return json(await actInbox(ctx, me, false));
+        const box = await actInbox(ctx, me, false, { before: q.before, limit: q.limit });
+        return json({ ...box, next: box.next_cursor ? inboxNext(ctx, u, box.next_cursor) : null });
       }
       if (seg[0] === 'muses' && seg.length === 2) {
         const m = await getMuse(ctx.db, seg[1]!, ctx.now);
@@ -74,7 +82,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
     if (req.method === 'POST') {
       const body = ((await req.json().catch(() => ({}))) || {}) as Record<string, unknown>;
       if (seg[0] === 'muses' && seg.length === 4 && seg[2] === 'notifications' && seg[3] === 'read')
-        return json(await actInbox(ctx, await ownMuse(ctx, req, seg[1]!), true));
+        return json(await actInbox(ctx, await ownMuse(ctx, req, seg[1]!), true, { before: body.before, limit: body.limit }));
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), body.as);
       if (seg[0] === 'raises' && seg.length === 1) return json(await actCreate(ctx, muse, body), { status: 201 });
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'join') return json(await actJoin(ctx, muse, Number(seg[1]), body.note));

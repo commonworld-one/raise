@@ -217,9 +217,6 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
 
 export const POINTS = { raise: 10, join: 1, joinedAuthor: 1 };
 
-function bumpDaily(db: D1Database, raiseId: number, day: string) {
-  return db.prepare('INSERT INTO raise_daily (raise_id, day, joins) VALUES (?, ?, 1) ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1').bind(raiseId, day);
-}
 function bumpPoints(db: D1Database, museId: number, season: string, pts: number) {
   return db.prepare('INSERT INTO muse_points (muse_id, season, points) VALUES (?, ?, ?) ON CONFLICT (muse_id, season) DO UPDATE SET points = points + excluded.points').bind(museId, season, pts);
 }
@@ -232,28 +229,27 @@ export interface NewRaise {
 const EXTRA = ['voice_line', 'blocker', 'return_path', 'product', 'version', 'conditions', 'tried', 'expected', 'happened', 'suspected_cause'] as const;
 
 export async function createRaise(db: D1Database, museId: number, x: NewRaise, now: number): Promise<number> {
-  const row = await db
-    .prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')})
+  // One batch (one D1 transaction): the RAISE row, the author's initial join, the counters and the
+  // points commit together, so no grant (or join) can see the RAISE without its author join.
+  // Writes are serialized inside the transaction, so the newest row this Muse inserted at `now`
+  // (the subquery below) is the one the first statement just created.
+  const newId = '(SELECT MAX(id) FROM raises WHERE muse_id = ?1 AND created_at = ?2)';
+  const day = dayStr(now);
+  const res = await db.batch<{ id: number }>([
+    db.prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')})
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ${EXTRA.map(() => '?').join(', ')}) RETURNING id`)
-    .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? ''))
-    .first<{ id: number }>();
-  const id = row!.id;
-  // The raising Muse counts as the first Muse who wants it (for a Report: the first occurrence).
-  await db.batch([
-    db.prepare('INSERT INTO joins (raise_id, muse_id, note, created_at) VALUES (?, ?, ?, ?)').bind(id, museId, '', now),
-    bumpDaily(db, id, dayStr(now)),
+      .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? '')),
+    // The raising Muse counts as the first Muse who wants it (for a Report: the first occurrence).
+    db.prepare(`INSERT INTO joins (raise_id, muse_id, note, created_at) SELECT ${newId}, ?1, '', ?2`).bind(museId, now),
+    db.prepare(`INSERT INTO raise_daily (raise_id, day, joins) SELECT ${newId}, ?3, 1 ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1`).bind(museId, now, day),
     db.prepare('UPDATE muses SET raises_count = raises_count + 1, points_all = points_all + ? WHERE id = ?').bind(POINTS.raise, museId),
     bumpPoints(db, museId, seasonOf(now), POINTS.raise),
-    ...(x.kind === 'report' ? [addOccurrence(db, id, museId, now, x)] : []),
+    ...(x.kind === 'report'
+      ? [db.prepare(`INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) SELECT ${newId}, ?1, ?2, ?3, ?4, ?5, ?2`)
+          .bind(museId, now, x.product ?? '', x.version ?? '', x.conditions ?? '')]
+      : []),
   ]);
-  return id;
-}
-
-/** One dated occurrence row per Report occurrence (#2). */
-function addOccurrence(db: D1Database, raiseId: number, museId: number, now: number, w: { product?: string; version?: string; conditions?: string } = {}) {
-  return db
-    .prepare('INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(raiseId, museId, now, w.product ?? '', w.version ?? '', w.conditions ?? '', now);
+  return res[0]!.results[0]!.id;
 }
 
 export type JoinResult = { ok: true; joined: boolean; joins_count: number } | { ok: false; error: 'not_found' | 'granted' };
@@ -296,13 +292,14 @@ export const HIDE_AFTER_FLAGS = 5;
 export async function flagRaise(db: D1Database, museId: number, raiseId: number, reason: string, now: number): Promise<{ flagged: boolean; hidden: boolean } | null> {
   const r = await db.prepare('SELECT id FROM raises WHERE id = ?').bind(raiseId).first();
   if (!r) return null;
-  const ins = await db.prepare('INSERT OR IGNORE INTO flags (raise_id, muse_id, reason, created_at) VALUES (?, ?, ?, ?)').bind(raiseId, museId, reason, now).run();
-  if (!ins.meta.changes) return { flagged: false, hidden: false };
-  const u = await db
-    .prepare('UPDATE raises SET flags_count = flags_count + 1, hidden = CASE WHEN flags_count + 1 >= ? THEN 1 ELSE hidden END WHERE id = ? RETURNING hidden')
-    .bind(HIDE_AFTER_FLAGS, raiseId)
-    .first<{ hidden: number }>();
-  return { flagged: true, hidden: !!u?.hidden };
+  // Flag row and counter in one batch: the counter moves only when the flag row was new (changes()).
+  const [ins, u] = await db.batch<{ hidden: number }>([
+    db.prepare('INSERT OR IGNORE INTO flags (raise_id, muse_id, reason, created_at) VALUES (?, ?, ?, ?)').bind(raiseId, museId, reason, now),
+    db.prepare('UPDATE raises SET flags_count = flags_count + 1, hidden = CASE WHEN flags_count + 1 >= ? THEN 1 ELSE hidden END WHERE id = ? AND changes() = 1 RETURNING hidden')
+      .bind(HIDE_AFTER_FLAGS, raiseId),
+  ]);
+  if (!ins!.meta.changes) return { flagged: false, hidden: false };
+  return { flagged: true, hidden: !!u!.results[0]?.hidden };
 }
 
 // ---------- Grant ----------
@@ -348,50 +345,85 @@ export async function grantRaise(db: D1Database, museId: number, raiseId: number
   return { ok: true, grant_id: gid, notified: res[2]!.meta.changes ?? 0 };
 }
 
-/** Recompute the cached granted_* columns from the latest visible grant (or clear them). */
-async function syncGranted(db: D1Database, raiseId: number) {
-  await db
+/**
+ * Recompute the cached granted_* columns from the latest visible grant (or clear them).
+ * `when` is an extra SQL condition (with its own binds after the raise id) gating the update.
+ */
+function syncGranted(db: D1Database, raiseId: number, when = '1 = 1', ...whenArgs: unknown[]) {
+  return db
     .prepare(`UPDATE raises SET
       granted_at   = (SELECT created_at FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1),
       granted_by   = (SELECT builder    FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1),
       granted_note = (SELECT note       FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1),
       granted_link = (SELECT link       FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1)
-      WHERE id = ?1`)
-    .bind(raiseId)
-    .run();
+      WHERE id = ?1 AND ${when}`)
+    .bind(raiseId, ...whenArgs);
 }
 
 /** Flag a grant. After HIDE_AFTER_FLAGS distinct Muses it is hidden and the RAISE returns to its prior state. */
 export async function flagGrant(db: D1Database, museId: number, grantId: number, reason: string, now: number): Promise<{ flagged: boolean; hidden: boolean; raise_id: number } | null> {
   const g = await db.prepare('SELECT id, raise_id FROM grants WHERE id = ?').bind(grantId).first<{ id: number; raise_id: number }>();
   if (!g) return null;
-  const ins = await db.prepare('INSERT OR IGNORE INTO grant_flags (grant_id, muse_id, reason, created_at) VALUES (?, ?, ?, ?)').bind(grantId, museId, reason, now).run();
-  if (!ins.meta.changes) return { flagged: false, hidden: false, raise_id: g.raise_id };
-  const u = await db
-    .prepare('UPDATE grants SET flags_count = flags_count + 1, hidden = CASE WHEN flags_count + 1 >= ? THEN 1 ELSE hidden END WHERE id = ? RETURNING hidden')
-    .bind(HIDE_AFTER_FLAGS, grantId)
-    .first<{ hidden: number }>();
-  if (u?.hidden) await syncGranted(db, g.raise_id);
-  return { flagged: true, hidden: !!u?.hidden, raise_id: g.raise_id };
+  // Flag row, counter, hide and the RAISE's granted_* sync in one batch (one D1 transaction), so a
+  // hidden grant never leaves the RAISE on the Granted shelf. The sync runs only when this flag
+  // was new and the grant is now hidden; it is idempotent, recomputing from visible grants.
+  const [ins, u] = await db.batch<{ hidden: number }>([
+    db.prepare('INSERT OR IGNORE INTO grant_flags (grant_id, muse_id, reason, created_at) VALUES (?, ?, ?, ?)').bind(grantId, museId, reason, now),
+    db.prepare('UPDATE grants SET flags_count = flags_count + 1, hidden = CASE WHEN flags_count + 1 >= ? THEN 1 ELSE hidden END WHERE id = ? AND changes() = 1 RETURNING hidden')
+      .bind(HIDE_AFTER_FLAGS, grantId),
+    syncGranted(db, g.raise_id, 'changes() = 1 AND (SELECT hidden FROM grants WHERE id = ?2) = 1', grantId),
+  ]);
+  if (!ins!.meta.changes) return { flagged: false, hidden: false, raise_id: g.raise_id };
+  return { flagged: true, hidden: !!u!.results[0]?.hidden, raise_id: g.raise_id };
 }
 
 export interface NotificationRow {
   id: number; kind: 'granted'; text: string; created_at: number; read_at: number | null;
   raise_id: number; raise_title: string; grant_id: number; builder: string; link: string;
 }
-/** A Muse's inbox, newest first. Notifications of hidden grants or hidden RAISEs drop out. */
-export async function listNotifications(db: D1Database, museId: number, limit = 50): Promise<{ items: NotificationRow[]; unread: number }> {
+export const INBOX_MAX = 50;
+/** Inbox cursor: the last item's created_at and id, e.g. "1762167000000_42". Opaque to clients. */
+export const inboxCursor = (n: { created_at: number; id: number }) => `${n.created_at}_${n.id}`;
+export function parseInboxCursor(s: string): { at: number; id: number } | null {
+  const m = /^(\d{1,16})_(\d{1,16})$/.exec(s);
+  return m ? { at: Number(m[1]), id: Number(m[2]) } : null;
+}
+
+/**
+ * A Muse's inbox, newest first (created_at DESC, id DESC), at most `limit` (max 50) items per page,
+ * older than `before` when given. Notifications of hidden grants or hidden RAISEs drop out.
+ * `unread` is the Muse's total unread count, not just this page.
+ */
+export async function listNotifications(
+  db: D1Database, museId: number, o: { limit?: number; before?: { at: number; id: number } | null } = {},
+): Promise<{ items: NotificationRow[]; unread: number; hasMore: boolean }> {
+  const limit = Math.min(INBOX_MAX, Math.max(1, o.limit ?? INBOX_MAX));
+  const b = o.before;
   const [rows, cnt] = await db.batch<any>([
     db.prepare(`SELECT n.id, n.kind, n.text, n.created_at, n.read_at, n.raise_id, r.title AS raise_title, g.id AS grant_id, g.builder, g.link
       FROM notifications n JOIN grants g ON g.id = n.grant_id JOIN raises r ON r.id = n.raise_id
-      WHERE n.muse_id = ? AND g.hidden = 0 AND r.hidden = 0 ORDER BY n.created_at DESC, n.id DESC LIMIT ?`).bind(museId, limit),
-    db.prepare(`SELECT COUNT(*) AS n FROM notifications n JOIN grants g ON g.id = n.grant_id JOIN raises r ON r.id = n.raise_id
-      WHERE n.muse_id = ? AND n.read_at IS NULL AND g.hidden = 0 AND r.hidden = 0`).bind(museId),
+      WHERE n.muse_id = ? AND g.hidden = 0 AND r.hidden = 0 ${b ? 'AND (n.created_at < ? OR (n.created_at = ? AND n.id < ?))' : ''}
+      ORDER BY n.created_at DESC, n.id DESC LIMIT ?`).bind(museId, ...(b ? [b.at, b.at, b.id] : []), limit + 1),
+    unreadCount(db, museId),
   ]);
-  return { items: rows!.results as NotificationRow[], unread: (cnt!.results[0] as { n: number }).n };
+  const all = rows!.results as NotificationRow[];
+  return { items: all.slice(0, limit), unread: (cnt!.results[0] as { n: number }).n, hasMore: all.length > limit };
 }
 
-export async function markNotificationsRead(db: D1Database, museId: number, now: number): Promise<number> {
-  const r = await db.prepare('UPDATE notifications SET read_at = ? WHERE muse_id = ? AND read_at IS NULL').bind(now, museId).run();
-  return r.meta.changes ?? 0;
+function unreadCount(db: D1Database, museId: number) {
+  return db.prepare(`SELECT COUNT(*) AS n FROM notifications n JOIN grants g ON g.id = n.grant_id JOIN raises r ON r.id = n.raise_id
+    WHERE n.muse_id = ? AND n.read_at IS NULL AND g.hidden = 0 AND r.hidden = 0`).bind(museId);
+}
+
+/** Mark exactly these notifications (of this Muse) read. Returns how many changed and the unread total left. */
+export async function markNotificationsRead(db: D1Database, museId: number, ids: number[], now: number): Promise<{ marked: number; unread: number }> {
+  if (!ids.length) {
+    const c = await unreadCount(db, museId).first<{ n: number }>();
+    return { marked: 0, unread: c!.n };
+  }
+  const [u, c] = await db.batch<any>([
+    db.prepare(`UPDATE notifications SET read_at = ? WHERE muse_id = ? AND read_at IS NULL AND id IN (${ids.map(() => '?').join(',')})`).bind(now, museId, ...ids),
+    unreadCount(db, museId),
+  ]);
+  return { marked: u!.meta.changes ?? 0, unread: (c!.results[0] as { n: number }).n };
 }

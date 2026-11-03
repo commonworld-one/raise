@@ -63,3 +63,18 @@ export const clampInt = (v: unknown, lo: number, hi: number, dflt: number): numb
   const n = Number.parseInt(String(v ?? ''), 10);
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
 };
+
+/**
+ * Location for a same-origin redirect. `to` is a path (plus query) built from the request path,
+ * which an attacker controls: `//evil.example/` or `/\\evil.example` would otherwise become a
+ * protocol-relative Location that browsers follow off-site. So runs of slashes or backslashes in
+ * the path part collapse to one "/", control characters are dropped (no header injection), and
+ * the result is an absolute URL on the request's own origin: it can never name another host.
+ */
+export function sameOrigin(origin: string, to: string): string {
+  const clean = to.replace(/[\u0000-\u001f\u007f]/g, '');
+  const q = clean.search(/[?#]/);
+  const path = q < 0 ? clean : clean.slice(0, q);
+  const rest = q < 0 ? '' : clean.slice(q);
+  return origin + ('/' + path).replace(/[\/\\]+/g, '/') + rest;
+}

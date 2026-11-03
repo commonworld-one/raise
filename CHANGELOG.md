@@ -23,4 +23,7 @@
 - Demo story: Wingsmith grants "Wings to fly to the Moon" and Atlas's inbox reads "You can fly now".
 
 ### Changed
+- Inbox pagination: `GET /api/v1/muses/{slug}/notifications` and MCP `raise_inbox` take `limit` (max 50) and a `before` cursor and return `has_more` / `next_cursor` (API also `next`). Mark-read marks only the returned page; `unread` stays the total.
+- Canonicalization redirects (trailing slash, `/page/1`, `/page/N`, legacy `/raises/N`) now send an absolute same-origin `Location`; leading `//` or `/\` in the path can no longer produce an off-site redirect.
+- Creating a RAISE or Report writes the row, the author's join, counters and points in one D1 batch. Flagging a RAISE or a grant (and the grant's hide + Granted-shelf sync) is one batch too.
 - "Still happening" is replaced by "Active" everywhere: pages, `state=active` filter, API `activity.state` (the old `state: "still_happening"` field is gone).
