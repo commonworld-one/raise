@@ -125,7 +125,9 @@ export function rowP(ctx: Ctx, x: RaiseRow, live = false): string {
   const where = [x.product, x.version].filter(Boolean).join(' ');
   return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
-const row = (ctx: Ctx, x: RaiseRow) => (x.kind === 'raise' ? rowR(ctx, x) : rowP(ctx, x));
+const row = (ctx: Ctx, x: RaiseRow, live = false) => (x.kind === 'raise' ? rowR(ctx, x, live) : rowP(ctx, x, live));
+/** Demo host: a live list's container attribute (the inline liveScript ticks every [data-live-list] on the page). */
+const liveList = (ctx: Ctx, name: string) => (ctx.demo ? ` data-live-list="${name}"` : '');
 
 /** Empty-state card. No button: "Connect your Muse" lives in the header and the Browse block only. */
 function empty(_ctx: Ctx, text: string): string {
@@ -264,8 +266,8 @@ export function granted(ctx: Ctx, u: URL, p: Page<RaiseRow>): string {
   const b = ctx.base;
   return `<div class="eyebrow">Granted ✨</div><h1>Wishes that came true.</h1><p class="lead">They stay here, and new wishes keep coming.</p>
 ${headlineBlock(ctx, HEADLINE_PAGES.granted, ctx.now)}
-<div class="grid3">${p.items.map((g) => `<a class="card" href="${b}/r/${pad(g.id)}">${avatar(g.muse_name, g.muse_avatar)}<h3>${esc(g.title)}</h3><div class="stat">${fmt(g.joins_count)}</div><div class="m">asked for it</div>${g.granted_by ? `<div class="granted">Granted ✨ by ${esc(g.granted_by)}</div>` : ''}</a>`).join('') || '<div class="card">Nothing granted yet. The first one will land here.</div>'}</div>
-${pager(`${b}/granted`, u.searchParams, p)}`;
+<div class="grid3"${liveList(ctx, 'granted')}>${p.items.map((g) => `<a class="card"${liveAttrs(ctx, g, ctx.demo)} href="${b}/r/${pad(g.id)}">${avatar(g.muse_name, g.muse_avatar)}<h3>${esc(g.title)}</h3><div class="stat"${ctx.demo ? ' data-live-n' : ''}>${fmt(g.joins_count)}</div><div class="m">asked for it</div>${g.granted_by ? `<div class="granted">Granted ✨ by ${esc(g.granted_by)}</div>` : ''}</a>`).join('') || '<div class="card">Nothing granted yet. The first one will land here.</div>'}</div>
+${ctx.demo && p.items.length ? liveScript() : ''}${pager(`${b}/granted`, u.searchParams, p)}`;
 }
 
 export const MUSE_DEFAULTS = { sort: 'season' };
@@ -294,8 +296,8 @@ export function profile(ctx: Ctx, m: MuseRow, u: URL, p: Page<RaiseRow>): string
   const none = m.joins_count > 0 ? 'Joined others so far.' : 'No RAISEs yet.';
   return `<div class="row" style="gap:24px">${avatar(m.name, m.avatar_url, 'xl')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h1>${esc(m.name)}</h1><p class="lead">${esc(m.tagline)}</p><b>${fmt(m.season_points || 0)}</b> season pts · <b>${fmt(m.points_all)}</b> all time · ${fmt(m.joins_count)} joins</div></div>
 ${roles}
-<h2>${esc(m.name)}'s RAISEs and reports</h2><div class="col">${p.items.map((x) => row(ctx, x)).join('') || `<div class="card">${none}</div>`}</div>
-${pager(`${ctx.base}/m/${esc(m.slug)}`, u.searchParams, p)}`;
+<h2>${esc(m.name)}'s RAISEs and reports</h2><div class="col"${liveList(ctx, 'profile')}>${p.items.map((x) => row(ctx, x, ctx.demo)).join('') || `<div class="card">${none}</div>`}</div>
+${ctx.demo && p.items.length ? liveScript() : ''}${pager(`${ctx.base}/m/${esc(m.slug)}`, u.searchParams, p)}`;
 }
 
 export function corporation(ctx: Ctx, season: string, liveSeason: string, all: string[], lb: MuseRow[], hall: { season: string; top: MuseRow }[]): string {
@@ -353,8 +355,9 @@ export function demoHomePage(ctx: Ctx, lists: { hot: RaiseRow[]; happening: Rais
   return `<section class="hero"><div class="eyebrow">${SLOGAN} · Hackathon demo</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
 ${parade(ctx)}<div class="bar"><a class="btn" href="${b}/demo">▶ See it in action</a></div></section>
 ${headlineBlock(ctx, HEADLINE_PAGES.home, ctx.now)}
-<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${lists.hot.map((x) => rowR(ctx, x)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
-<div><h2>👀 Happening now</h2><div class="col">${lists.happening.map((x) => rowP(ctx, x)).join('')}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
+<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col" data-live-list="hot">${lists.hot.map((x) => rowR(ctx, x, true)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
+<div><h2>👀 Happening now</h2><div class="col" data-live-list="happening">${lists.happening.map((x) => rowP(ctx, x, true)).join('')}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
+${liveScript()}
 <h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
 }
 

@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { LIVE, SCENARIO_RAISE_ID, applyLive, liveModel, liveScript } from '../src/live';
 import type { RaiseRow } from '../src/data';
-import { dget, get } from './helpers';
+import { env } from 'cloudflare:test';
+import { BASE, PROD, dget, get } from './helpers';
 
 const H = LIVE.SEASON_MS;
 const T0 = Date.UTC(2026, 10, 3, 12, 0, 0); // a season start (12:00 UTC)
@@ -108,5 +109,66 @@ describe('pages', () => {
     const counts = [...t.matchAll(/data-count="(\d+)"/g)].map((m) => Number(m[1]));
     expect(counts.length).toBeGreaterThan(2);
     expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  });
+});
+
+describe('every card list on the demo host uses the live formula (home, profiles, /granted)', () => {
+  const cards = (t: string) => [...t.matchAll(/<a class="(?:item|card)"((?: data-[a-z-]+="\d+")*) href="\/r\/(\d{4})">/g)].map((m) => ({ id: Number(m[2]), attrs: m[1]! }));
+  const shown = (t: string, id: number) => {
+    const i = t.indexOf(`href="/r/${String(id).padStart(4, '0')}">`);
+    const m = /<span class="n">([0-9,]+)<\/span>.*?<span class="up">\+([0-9,]+) today<\/span>|<div class="stat" data-live-n>([0-9,]+)<\/div>/.exec(t.slice(i));
+    const n = (s?: string) => (s ? Number(s.replace(/,/g, '')) : undefined);
+    return { count: n(m![1] ?? m![3])!, today: n(m![2]) };
+  };
+
+  it('demo home: Hot RAISEs and Happening now show the formula numbers, same as /raises and /reports, and tick', async () => {
+    const before = Date.now();
+    const t = await (await dget('/')).text();
+    const after = Date.now();
+    expect(t).toContain('data-live-list="hot"');
+    expect(t).toContain('data-live-list="happening"');
+    expect(t).toContain('SEASON_MS');
+    const live = cards(t).filter((c) => c.attrs.includes('data-live-seed'));
+    expect(live.length).toBeGreaterThanOrEqual(4);
+    for (const c of live) {
+      const { count, today } = shown(t, c.id);
+      expect(count).toBeGreaterThanOrEqual(LIVE.count(c.id, before));
+      expect(count).toBeLessThanOrEqual(LIVE.count(c.id, after));
+      expect(count).toBeGreaterThanOrEqual(10_000);
+      expect(today).toBeLessThanOrEqual(LIVE.today(c.id, after));
+      expect(today).toBeGreaterThanOrEqual(LIVE.today(c.id, before));
+    }
+  });
+
+  it('demo /m/<slug> lists and /granted cards: live numbers; #0418 keeps its stored count', async () => {
+    const before = Date.now();
+    const g = await (await dget('/granted')).text();
+    const p = await (await dget('/m/atlas')).text();
+    const after = Date.now();
+    for (const t of [g, p]) {
+      expect(t).toContain('data-live-list=');
+      const live = cards(t).filter((c) => c.attrs.includes('data-live-seed'));
+      expect(live.length).toBeGreaterThan(0);
+      for (const c of live) {
+        const { count } = shown(t, c.id);
+        expect(count).toBeGreaterThanOrEqual(LIVE.count(c.id, before));
+        expect(count).toBeLessThanOrEqual(LIVE.count(c.id, after));
+      }
+    }
+    expect(g).toContain('href="/r/0418"');
+    expect(g).not.toContain(`data-live-seed="${SCENARIO_RAISE_ID}"`);
+    const stored = (await env.DEMO_DB.prepare('SELECT joins_count FROM raises WHERE id = ?').bind(SCENARIO_RAISE_ID).first<{ joins_count: number }>())!.joins_count;
+    expect(shown(g, SCENARIO_RAISE_ID).count).toBe(stored);
+  });
+
+  it('product home, /granted and profiles: stored numbers, no live markup or script', async () => {
+    for (const path of ['/', '/granted', '/m/atlas']) {
+      for (const host of [BASE, PROD]) {
+        const t = await (await get(path, {}, host)).text();
+        expect(t, `${host}${path}`).not.toContain('data-live-seed');
+        expect(t, `${host}${path}`).not.toContain('data-live-list');
+        expect(t, `${host}${path}`).not.toContain('SEASON_MS');
+      }
+    }
   });
 });

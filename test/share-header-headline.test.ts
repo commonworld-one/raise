@@ -2,7 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import { BASE, DEMO, PROD, dget, get } from './helpers';
-import { HEADLINES, HEADLINE_PAGES, LIVE, headlineValue } from '../src/live';
+import { HEADLINES, HEADLINE_PAGES, LIVE, SCENARIO_RAISE_ID, SCENARIO_REPORT_ID, headlineValue, type DemoCard } from '../src/live';
+
+/** The demo cards as the Worker reads them (every visible card). */
+const demoCards = async (): Promise<DemoCard[]> =>
+  (await env.DEMO_DB.prepare('SELECT id, joins_count, granted_at FROM raises WHERE hidden = 0').all<{ id: number; joins_count: number; granted_at: number | null }>()).results.map((x) => ({ id: x.id, joins_count: x.joins_count, granted: x.granted_at != null }));
 
 const meta = (t: string, k: string) => {
   const m = new RegExp(`<meta (?:property|name)="${k.replace(/[:.]/g, '\\$&')}" content="([^"]*)">`).exec(t);
@@ -88,6 +92,7 @@ describe('live headline counters', () => {
 
   for (const [page, path] of [['home', '/'], ['granted', '/granted'], ['muses', '/muses'], ['corporation', '/corporation']] as const) {
     it(`demo ${path} shows ${HEADLINE_PAGES[page].join(', ')}; the product ${path} shows none`, async () => {
+      const cards = await demoCards();
       const before = Date.now();
       const t = await (await dget(path)).text();
       const after = Date.now();
@@ -96,8 +101,8 @@ describe('live headline counters', () => {
       expect(got.map((g) => g[0])).toEqual(HEADLINE_PAGES[page]);
       for (const [k, v, label] of got) {
         expect(label).toBe(HEADLINES[k as keyof typeof HEADLINES].label);
-        expect(v).toBeGreaterThanOrEqual(headlineValue(k as any, before));
-        expect(v).toBeLessThanOrEqual(headlineValue(k as any, after));
+        expect(v).toBeGreaterThanOrEqual(headlineValue(k as any, before, cards));
+        expect(v).toBeLessThanOrEqual(headlineValue(k as any, after, cards));
       }
       expect(t).toContain('M.total(h.seeds[i],t)');
       expect(t).toContain("prefers-reduced-motion: reduce");
@@ -109,9 +114,10 @@ describe('live headline counters', () => {
     });
   }
 
-  it('the counters never go down, also across a season boundary, and Granted+Fixed >= Granted', () => {
+  it('the all-time counters never go down, also across a season boundary, and Granted+Fixed >= Granted', async () => {
+    const cards = await demoCards();
     const s = LIVE.SEASON_MS, t0 = LIVE.seasonStart(Date.now()) + 3 * s;
-    for (const k of Object.keys(HEADLINES) as (keyof typeof HEADLINES)[]) {
+    for (const k of (Object.keys(HEADLINES) as (keyof typeof HEADLINES)[]).filter((k) => !('cards' in HEADLINES[k]))) {
       let prev = -1;
       for (const t of [t0 - s / 2, t0 - 60000, t0 - 1, t0, t0 + 1, t0 + 60000, t0 + s / 2, t0 + s + 5]) {
         const v = headlineValue(k, t);
@@ -122,8 +128,35 @@ describe('live headline counters', () => {
     for (let i = 0; i < 20; i++) {
       const t = Date.now() + i * 3_600_000;
       expect(headlineValue('resolved', t)).toBeGreaterThanOrEqual(headlineValue('granted', t));
-      expect(headlineValue('joins', t)).toBeGreaterThan(headlineValue('grantedJoins', t));
+      expect(headlineValue('joins', t, cards)).toBeGreaterThan(headlineValue('grantedJoins', t, cards));
     }
+  });
+
+  it('"Muses joined" is the sum of the cards: every live card\'s count plus the scenario cards\' stored counts; "Muses behind them" is the same over the granted cards', async () => {
+    const cards = await demoCards();
+    expect(cards.length).toBeGreaterThan(10);
+    const t = Date.now();
+    const scen = (c: DemoCard) => c.id === SCENARIO_RAISE_ID || c.id === SCENARIO_REPORT_ID;
+    const fixed = (cs: DemoCard[]) => cs.filter(scen).reduce((a, c) => a + c.joins_count, 0);
+    const live = (cs: DemoCard[]) => cs.filter((c) => !scen(c)).reduce((a, c) => a + LIVE.count(c.id, t), 0);
+    expect(headlineValue('joins', t, cards)).toBe(fixed(cards) + live(cards));
+    const g = cards.filter((c) => c.granted);
+    expect(g.length).toBeGreaterThan(0);
+    expect(headlineValue('grantedJoins', t, cards)).toBe(fixed(g) + live(g));
+    // Same order of magnitude as the cards: never more than the number of cards times the biggest card.
+    const biggest = Math.max(...cards.map((c) => (scen(c) ? c.joins_count : LIVE.count(c.id, t))));
+    expect(headlineValue('joins', t, cards)).toBeLessThanOrEqual(cards.length * biggest);
+  });
+
+  it('tile numbers size from their own tile, so they never overflow (all pages with tiles, and /r/NNNN)', () => {
+    const css = env.TEST_STYLE_CSS as string;
+    expect(css).toMatch(/\.headline \.hl\{[^}]*container-type:inline-size/);
+    expect(css).toMatch(/\.headline \.hl\{[^}]*min-width:0/);
+    expect(css).toMatch(/\.headline \.hn\{[^}]*font-size:clamp\(14px,12\.5cqi,48px\)/);
+    expect(css).toMatch(/\.headline \.hn\{[^}]*tabular-nums/);
+    expect(css).not.toMatch(/\.headline \.hn\{font-size:21px/);
+    expect(css).toMatch(/\.card\[data-live-card\]\{[^}]*container-type:inline-size/);
+    expect(css).toMatch(/\.card\[data-live-card\] \.stat\.big\{font-size:clamp\([^)]*cqi/);
   });
 
   it('style.css has the big-digit block', () => {
