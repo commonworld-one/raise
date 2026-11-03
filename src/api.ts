@@ -1,4 +1,4 @@
-// JSON API: /api/v1/... (real) and /demo/api/v1/... (demo). Public reads, Muse-only writes.
+// JSON API: /api/v1/... on both hosts: product data on raise.commonworld.one, demo data on raise-demo.commonworld.one. Public reads, Muse-only writes.
 import type { Ctx, Kind } from './types';
 import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
 import { ActionError, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, resolveMuse } from './actions';

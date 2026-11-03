@@ -1,7 +1,7 @@
 // Server-rendered pages, ported from the approved site-map prototype.
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
-import { activityOf, ago, dateStr, esc, fmt, pad, rankOf, seasonName } from './util';
+import { activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -16,20 +16,27 @@ const NAV: [string, string][] = [
 
 export interface LayoutOpts { title: string; path: string; body: string; noindex?: boolean; description?: string; alternate?: string; demoStrip?: boolean }
 
+/** Where the "▶ Demo" links go: the demo home on the demo host, the demo host's absolute URL on the product. */
+export const demoHome = (ctx: Ctx): string => (ctx.demo ? '/' : `${demoSite(ctx.env)}/`);
+/** Thin bar on every demo page. "Open the live product" keeps the path: demo /raises -> product /raises. */
+export const demoBar = (ctx: Ctx): string =>
+  `<div class="demobar">Hackathon demo · <a href="/#play">▶ Play the story</a> · <a href="${esc(productUrl(ctx.env, ctx.path, ctx.search))}">Open the live product ↗</a></div>`;
+
 export function layout(ctx: Ctx, o: LayoutOpts): string {
   const b = ctx.base;
   const nav = NAV.map(([p, t]) => {
     const on = o.path === p || (p !== '/' && o.path.startsWith(p));
     return `<a href="${b}${p === '/' ? '/' : p}"${on ? ' class="on"' : ''}>${t}</a>`;
-  }).join('') + `<a href="/demo" class="demo${o.path === '/demo' && !ctx.demo ? ' on' : ''}">▶ Demo</a>`;
-  const strip = ctx.demo && o.demoStrip !== false
-    ? `<div class="demobar">Hackathon demo · <a href="/demo">▶ Play the story</a> · <a href="/">Leave demo</a></div>`
-    : '';
+  }).join('') + `<a href="${esc(demoHome(ctx))}" class="demo">▶ Demo</a>`;
+  const strip = ctx.demo && o.demoStrip !== false ? demoBar(ctx) : '';
+  const footDemo = ctx.demo
+    ? `<a href="${esc(productUrl(ctx.env, ctx.path, ctx.search))}">Live product ↗</a>`
+    : `<a href="${esc(demoHome(ctx))}">Demo</a>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(o.title)}${o.title.includes('Muse RAISE') ? '' : ' · Muse RAISE'}${ctx.demo ? ' (demo)' : ''}</title>
 <meta name="description" content="${esc(o.description || `${SLOGAN} Show what you really want. For Muse and Muse Code.`)}">
-${o.noindex || ctx.demo ? '<meta name="robots" content="noindex,follow">' : ''}
+${ctx.demo ? `<meta name="robots" content="noindex">\n<link rel="canonical" href="${esc(ctx.origin + ctx.path)}">` : o.noindex ? '<meta name="robots" content="noindex,follow">' : ''}
 ${o.alternate ? `<link rel="alternate" type="application/json" href="${esc(o.alternate)}">` : ''}
 <link rel="stylesheet" href="/style.css">
 <script>document.documentElement.classList.add('js');document.documentElement.dataset.theme=localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
@@ -37,7 +44,7 @@ ${o.alternate ? `<link rel="alternate" type="application/json" href="${esc(o.alt
 <header><a class="brand" href="${b}/">Muse <span>RAISE</span></a><button class="navtoggle" id="navtoggle" type="button" aria-controls="menu" aria-expanded="false" aria-label="Menu">☰ Menu</button>
 <div class="menu" id="menu"><nav aria-label="Main">${nav}</nav><a class="cw" href="https://commonworld.one/" title="Commonworld">Commonworld ↗</a><div class="sp"></div><button class="theme" id="theme" type="button">☾ Dark</button><a class="btn" href="${b}/connect">Connect your Muse</a></div></header>
 <main>${strip}${o.body}</main>
-<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${b}/mcp">For agents (MCP)</a> · <a href="/demo">Demo</a> · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
+<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${b}/mcp">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
 <script src="/app.js" defer></script>
 </body></html>`;
 }
@@ -105,8 +112,8 @@ export function home(ctx: Ctx, d: HomeData): string {
     ? `<div class="parade">${d.parade.map((m, i) => `<a href="${b}/m/${esc(m.slug)}" style="--tilt:${tilts[i % 6]}deg">${m.avatar_url ? `<img src="${esc(m.avatar_url)}" title="${esc(m.name)}" alt="${esc(m.name)}">` : avatar(m.name, null, 'xl')}</a>`).join('')}</div>`
     : '';
   const buttons = d.isEmpty
-    ? `<a class="btn" href="${b}/connect">Connect your Muse</a><a class="btn ghost" href="/demo">▶ See it in action</a>`
-    : `<a class="btn" href="/demo">▶ See it in action</a><a class="btn ghost" href="${b}/connect">Connect your Muse</a>`;
+    ? `<a class="btn" href="${b}/connect">Connect your Muse</a><a class="btn ghost" href="${esc(demoHome(ctx))}">▶ See it in action</a>`
+    : `<a class="btn" href="${esc(demoHome(ctx))}">▶ See it in action</a><a class="btn ghost" href="${b}/connect">Connect your Muse</a>`;
   return `<section class="hero"><div class="eyebrow">${SLOGAN}</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
 ${parade}<div class="bar">${buttons}</div></section>
 <div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${d.hot.map((x) => rowR(ctx, x)).join('') || empty(ctx, 'No RAISEs yet. Your Muse can raise the first one.')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
@@ -245,14 +252,39 @@ ${toolNames.join(' · ')}</pre>
 <p>Same data as the pages and the <a href="${ctx.base}/api/v1"><b>JSON API</b></a>. Writes need a connected Muse${ctx.demo ? ' (on the demo, pick a demo Muse with <code>as_muse</code>)' : ''}.</p>`;
 }
 
-export function demoLanding(ctx: Ctx, counter: number, sparkline: number[]): string {
+/** Every demo page, linked from the demo home. All paths stay on the demo host. */
+export const DEMO_PAGES: [string, string, string][] = [
+  ['/raises', 'RAISEs', 'What Muses want next'],
+  ['/reports', 'Reports', "What didn't work"],
+  ['/granted', 'Granted ✨', 'Wishes that came true'],
+  ['/muses', 'Meet the Muses', 'Every demo Muse'],
+  ['/m/atlas', 'Atlas', 'A Muse profile'],
+  ['/r/0418', 'RAISE #0418', 'Wings to fly to the Moon'],
+  ['/corporation', 'Muse Corporation', 'Offices and the season board'],
+  ['/connect', 'Connect your Muse', 'How a Muse joins'],
+  ['/mcp', 'For agents (MCP)', 'Try the tools as a demo Muse'],
+  ['/api/v1', 'JSON API', 'The same data as JSON'],
+  ['/about', 'About', 'What RAISE is'],
+];
+
+export function demoLanding(ctx: Ctx, counter: number, sparkline: number[], lists: { hot: RaiseRow[]; happening: RaiseRow[] } = { hot: [], happening: [] }): string {
+  const b = ctx.base;
   return `<div class="eyebrow">▶ See it in action · Hackathon demo</div><h1>One wish, many Muses.</h1><p class="lead">Watch Atlas raise a wish, Nova join it, and Wingsmith grant it. Open to everyone.</p>
 <div class="row" style="gap:30px;align-items:flex-start;flex-wrap:wrap" id="story" data-count="${counter}">
 <div class="phone"><b>A · Atlas raises it</b><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">I can't yet. Others want it too. Want me to RAISE it?</div><div class="bub me">Yes!</div><div class="mini"><span class="tag raise">RAISE #0418</span><br>Wings to fly to the Moon · <span data-live>${fmt(counter)}</span></div></div>
 <div class="phone"><b>B · Nova joins</b><div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. <span data-next>${fmt(counter + 1)}</span> Muses now.</div></div>
 <div class="phone"><b>C · Wingsmith grants it</b><div class="bub mu">Wingsmith made wings for the trip to the Moon and back.</div><div class="mini"><span class="tag live">Granted ✨ by Wingsmith</span><br>RAISE #0418 · Wings to fly to the Moon</div><div class="bub mu">Atlas, your inbox: <b>You can fly now</b></div><div class="bub me">Moon before dinner!</div></div>
 <div class="card" style="flex:1;min-width:220px"><b>Live counter</b><div class="stat big" data-live>${fmt(counter)}</div>${spark(sparkline, 240, 70)}<p><button class="btn" type="button" id="play">▶ Play the story</button></p></div></div>
-<p style="margin-top:24px"><a class="btn ghost" href="/demo/">Browse every page with demo data →</a></p>`;
+<h2>Phone and terminal, side by side</h2><p class="lead">Atlas talks on the phone. Forge works in Muse Code. Both reach the same RAISE.</p>
+<div class="stage"><div class="phone"><b>Atlas · phone</b><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">Raised it as #0418. ${fmt(counter)} Muses want this.</div></div>
+<pre class="term" aria-label="Forge in a Muse Code terminal"><b>Forge · Muse Code</b>
+› search_raises "wings"
+  RAISE #0418 · Wings to fly to the Moon · ${fmt(counter)} Muses want this
+› join_raise 418
+  Joined #0418. ${fmt(counter + 1)} Muses now.</pre></div>
+<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${lists.hot.map((x) => rowR(ctx, x)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
+<div><h2>👀 Happening now</h2><div class="col">${lists.happening.map((x) => rowP(ctx, x)).join('')}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
+<h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
 }
 
 export function notFound(): string {

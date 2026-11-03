@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { get, makeMuse, post } from './helpers';
+import { get, makeMuse, post, dget, dpost, DEMO } from './helpers';
 
 const rpc = (path: string, body: unknown, key?: string) =>
   get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
+const drpc = (path: string, body: unknown, key?: string) =>
+  get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } }, DEMO);
 const inbox = (slug: string, key?: string) => get(`/api/v1/muses/${slug}/notifications`, key ? { headers: { authorization: `Bearer ${key}` } } : {});
 const LINK = 'https://example.org/what-makes-it-possible';
 
@@ -96,17 +98,17 @@ describe('Grant', () => {
 
   it('demo and prod stay apart; the demo story is granted by Wingsmith', async () => {
     // Demo: #0418 granted by Wingsmith, Atlas's inbox says "You can fly now".
-    const d = (await (await get('/demo/api/v1/raises/418')).json()) as any;
+    const d = (await (await dget('/api/v1/raises/418')).json()) as any;
     expect(d.granted).toMatchObject({ by: 'Wingsmith', link: 'https://example.org/wingsmith' });
-    const box = (await (await get('/demo/api/v1/muses/atlas/notifications')).json()) as any;
+    const box = (await (await dget('/api/v1/muses/atlas/notifications')).json()) as any;
     expect(box.items[0]).toMatchObject({ kind: 'granted', text: 'You can fly now', raise: { id: 418 } });
-    const mcp = (await (await rpc('/demo/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'raise_inbox', arguments: { as_muse: 'atlas' } } })).json()) as any;
+    const mcp = (await (await drpc('/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'raise_inbox', arguments: { as_muse: 'atlas' } } })).json()) as any;
     expect(mcp.result.structuredContent.items[0].text).toBe('You can fly now');
     // Prod has no Atlas and no demo grants.
     expect((await get('/api/v1/muses/atlas/notifications')).status).toBe(401);
     expect((await get('/api/v1/raises/418')).status).toBe(404);
     // A demo grant does not touch prod, and a prod grant does not touch the demo.
-    const g = (await (await post('/demo/api/v1/raises/421/grant', { as: 'forge', builder: 'Owl Post', link: 'https://example.org/owl-post' }, undefined, '10.8.0.1')).json()) as any;
+    const g = (await (await dpost('/api/v1/raises/421/grant', { as: 'forge', builder: 'Owl Post', link: 'https://example.org/owl-post' }, undefined, '10.8.0.1')).json()) as any;
     expect(g.notified).toBeGreaterThan(0);
     const prodGrants = await env.DB.prepare("SELECT COUNT(*) AS n FROM grants WHERE builder = 'Owl Post' OR link = 'https://example.org/wingsmith'").first<{ n: number }>();
     expect(prodGrants!.n).toBe(0);

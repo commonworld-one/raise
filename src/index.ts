@@ -1,4 +1,5 @@
-// Muse RAISE Worker. Real site at /, demo mirror at /demo/... (separate D1 database).
+// Muse RAISE Worker. Product on raise.commonworld.one (DB), hackathon demo on raise-demo.commonworld.one (DEMO_DB).
+// The hostname picks the database; the paths are the same on both hosts.
 import type { Ctx, Env, Kind } from './types';
 import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
 import { API_PREFIX, cached, handleApi } from './api';
@@ -6,7 +7,7 @@ import { handleMcp, tools } from './mcp';
 import { pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
-import { json, pad, sameOrigin, seasonOf } from './util';
+import { demoSite, isDemoHost, json, pad, sameOrigin, seasonOf } from './util';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -39,11 +40,16 @@ declare module './types' {
 }
 
 async function route(req: Request, env: Env, u: URL, ip: string): Promise<Response> {
-  let path = u.pathname;
-  // The demo landing page lives at exactly /demo; everything under /demo/ is the demo mirror.
-  const demo = path.startsWith('/demo/');
-  if (demo) path = path.slice(5) || '/';
-  const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: demo ? '/demo' : '', origin: u.origin, now: Date.now(), ip };
+  const path = u.pathname;
+  const demo = isDemoHost(env, u.hostname);
+  // /demo and /demo/... moved to the demo host. On the product host they go there; on the demo
+  // host they drop the prefix. 301 for reads, 308 for writes so API/MCP POSTs keep their method.
+  if (path === '/demo' || path.startsWith('/demo/')) {
+    const status = req.method === 'GET' || req.method === 'HEAD' ? 301 : 308;
+    const target = demo ? u.origin : demoSite(env);
+    return new Response(null, { status, headers: { location: sameOrigin(target, (path.slice(5) || '/') + u.search) } });
+  }
+  const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now: Date.now(), ip };
 
   if (path === API_PREFIX || path.startsWith(API_PREFIX + '/')) return handleApi(ctx, req, path.slice(API_PREFIX.length), u);
   if (path === '/mcp') {
@@ -52,11 +58,6 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     return handleMcp(ctx, req);
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method Not Allowed', { status: 405 });
-
-  if (path === '/demo' && !demo) {
-    const r = await getRaise(env.DEMO_DB, 418, ctx.now);
-    return html(V.layout(ctx, { title: 'Hackathon demo', path: '/demo', body: V.demoLanding(ctx, r?.joins_count ?? 0, r?.spark ?? []) }));
-  }
 
   // Legacy and convenience redirects
   if (path === '/leaderboard') return redirectTo(ctx, `${ctx.base}/corporation${u.search}`);
@@ -77,6 +78,11 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     let hot = await listRaises(ctx.db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, now);
     if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, now);
     const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, now);
+    if (ctx.demo) {
+      // Demo home: the story (Atlas raises, Nova joins, Wingsmith grants), then the demo lists and every page.
+      const r = await getRaise(ctx.db, 418, now);
+      return html(lay('Hackathon demo', '/', V.demoLanding(ctx, r?.joins_count ?? 0, r?.spark ?? [], { hot: hot.items, happening: happening.items })));
+    }
     const parade = await listMuses(ctx.db, { sort: 'season', perPage: 6 }, now);
     const season = seasonOf(now);
     const lb = await leaderboard(ctx.db, season, 1);

@@ -1,5 +1,5 @@
 // Minimal MCP server over streamable HTTP (JSON responses, stateless).
-// POST /mcp (real) and /demo/mcp (demo). Methods: initialize, ping, tools/list, tools/call.
+// POST /mcp on both hosts (product, or demo on raise-demo.commonworld.one). Methods: initialize, ping, tools/list, tools/call.
 import type { Ctx } from './types';
 import { getJoiners, getRaise, getVerifications, listRaises, pulse } from './data';
 import { ActionError, actCreate, actGrant, actInbox, actJoin, resolveMuse } from './actions';

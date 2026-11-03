@@ -78,3 +78,32 @@ export function sameOrigin(origin: string, to: string): string {
   const rest = q < 0 ? '' : clean.slice(q);
   return origin + ('/' + path).replace(/[\/\\]+/g, '/') + rest;
 }
+
+// ---------- hosts: product vs hackathon demo ----------
+
+const DEFAULT_SITE = 'https://raise.commonworld.one';
+const DEFAULT_DEMO = 'https://raise-demo.commonworld.one';
+const originOf = (url: string | undefined, dflt: string): string => {
+  try {
+    return new URL(url || dflt).origin;
+  } catch {
+    return dflt;
+  }
+};
+/** Origin of the product site, e.g. https://raise.commonworld.one */
+export const productSite = (env: { SITE_URL?: string }): string => originOf(env.SITE_URL, DEFAULT_SITE);
+/** Origin of the hackathon demo site, e.g. https://raise-demo.commonworld.one */
+export const demoSite = (env: { DEMO_SITE_URL?: string }): string => originOf(env.DEMO_SITE_URL, DEFAULT_DEMO);
+
+/**
+ * True when this request is for the demo host. Only the exact DEMO_SITE_URL hostname counts
+ * (plus raise-demo.localhost for `wrangler dev`). Every other hostname is the product and uses DB,
+ * so demo and real numbers never mix.
+ */
+export function isDemoHost(env: { DEMO_SITE_URL?: string }, hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/\.$/, '');
+  return h === new URL(demoSite(env)).hostname || h === 'raise-demo.localhost';
+}
+
+/** The same path (and query) on the product site: the demo bar's "Open the live product" link. */
+export const productUrl = (env: { SITE_URL?: string }, path: string, search = ''): string => sameOrigin(productSite(env), path + search);

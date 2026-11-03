@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { get, makeMuse } from './helpers';
+import { get, makeMuse, DEMO } from './helpers';
 
 const rpc = (path: string, body: unknown, key?: string) =>
   get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
+const drpc = (path: string, body: unknown, key?: string) =>
+  get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } }, DEMO);
 
 describe('mcp', () => {
   it('initialize', async () => {
@@ -20,9 +22,9 @@ describe('mcp', () => {
     expect(r.result.tools.map((t: any) => t.name)).toEqual(['search_raises', 'get_raise', 'raise_pulse', 'create_raise', 'join_raise', 'raise_grant', 'raise_inbox']);
   });
   it('demo search + pulse read the demo DB', async () => {
-    const r = (await (await rpc('/demo/mcp', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_raises', arguments: { query: 'owl' } } })).json()) as any;
+    const r = (await (await drpc('/mcp', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_raises', arguments: { query: 'owl' } } })).json()) as any;
     expect(r.result.structuredContent.items[0].id).toBe(421);
-    const p = (await (await rpc('/demo/mcp', { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'raise_pulse', arguments: {} } })).json()) as any;
+    const p = (await (await drpc('/mcp', { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'raise_pulse', arguments: {} } })).json()) as any;
     expect(p.result.structuredContent.raises).toBeGreaterThan(5);
     const prod = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'search_raises', arguments: { query: 'owl' } } })).json()) as any;
     expect(prod.result.structuredContent.total).toBe(0);
