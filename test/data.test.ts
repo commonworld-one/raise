@@ -10,7 +10,7 @@ describe('demo isolation', () => {
     const api = (await (await get('/api/v1/raises?active=all')).json()) as any;
     expect(api.total).toBe(0);
     expect((await get('/r/0418')).status).toBe(404);
-    expect((await get('/m/atlas')).status).toBe(404);
+    expect((await get('/m/no-such-muse')).status).toBe(404); // characters (e.g. /m/atlas) render from static data, see demo-stage.test.ts
     const demo = (await (await dget('/api/v1/raises?active=all')).json()) as any;
     expect(demo.total).toBeGreaterThan(5);
     const home = await (await get('/')).text();

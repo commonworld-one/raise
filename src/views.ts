@@ -2,6 +2,7 @@
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
+import { ROLE_RULE, homeParade, roleOf } from './characters';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -16,11 +17,15 @@ const NAV: [string, string][] = [
 
 export interface LayoutOpts { title: string; path: string; body: string; noindex?: boolean; description?: string; alternate?: string; demoStrip?: boolean }
 
-/** Where the "▶ Demo" links go: the demo home on the demo host, the demo host's absolute URL on the product. */
-export const demoHome = (ctx: Ctx): string => (ctx.demo ? '/' : `${demoSite(ctx.env)}/`);
+/** Where the "▶ Demo" links go: /demo (the story and the stage) on the demo host, the demo home on the product. */
+export const demoHome = (ctx: Ctx): string => (ctx.demo ? '/demo' : `${demoSite(ctx.env)}/`);
+/** "Connect your Muse" lives on the product only; links to it from the demo host go there. */
+export const connectHref = (ctx: Ctx): string => (ctx.demo ? productUrl(ctx.env, '/connect') : `${ctx.base}/connect`);
 /** Thin bar on every demo page. "Open the live product" keeps the path: demo /raises -> product /raises. */
+/** The same page on the product; /demo exists on the demo host only, so it maps to the product home. */
+const liveUrl = (ctx: Ctx): string => (ctx.path === '/demo' ? productUrl(ctx.env, '/') : productUrl(ctx.env, ctx.path, ctx.search));
 export const demoBar = (ctx: Ctx): string =>
-  `<div class="demobar">Hackathon demo · <a href="/#play">▶ Play the story</a> · <a href="${esc(productUrl(ctx.env, ctx.path, ctx.search))}">Open the live product ↗</a></div>`;
+  `<div class="demobar">Hackathon demo · <a href="/demo#play">▶ Play the story</a> · <a href="${esc(liveUrl(ctx))}">Open the live product ↗</a></div>`;
 
 export function layout(ctx: Ctx, o: LayoutOpts): string {
   const b = ctx.base;
@@ -30,7 +35,7 @@ export function layout(ctx: Ctx, o: LayoutOpts): string {
   }).join('') + `<a href="${esc(demoHome(ctx))}" class="demo">▶ Demo</a>`;
   const strip = ctx.demo && o.demoStrip !== false ? demoBar(ctx) : '';
   const footDemo = ctx.demo
-    ? `<a href="${esc(productUrl(ctx.env, ctx.path, ctx.search))}">Live product ↗</a>`
+    ? `<a href="${esc(liveUrl(ctx))}">Live product ↗</a>`
     : `<a href="${esc(demoHome(ctx))}">Demo</a>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,7 +47,7 @@ ${o.alternate ? `<link rel="alternate" type="application/json" href="${esc(o.alt
 <script>document.documentElement.classList.add('js');document.documentElement.dataset.theme=localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
 </head><body>
 <header><a class="brand" href="${b}/">Muse <span>RAISE</span></a><button class="navtoggle" id="navtoggle" type="button" aria-controls="menu" aria-expanded="false" aria-label="Menu">☰ Menu</button>
-<div class="menu" id="menu"><nav aria-label="Main">${nav}</nav><a class="cw" href="https://commonworld.one/" title="Commonworld">Commonworld ↗</a><div class="sp"></div><button class="theme" id="theme" type="button">☾ Dark</button><a class="btn" href="${b}/connect">Connect your Muse</a></div></header>
+<div class="menu" id="menu"><nav aria-label="Main">${nav}</nav><a class="cw" href="https://commonworld.one/" title="Commonworld">Commonworld ↗</a><div class="sp"></div><button class="theme" id="theme" type="button">☾ Dark</button>${ctx.demo ? '' : `<a class="btn" href="${b}/connect">Connect your Muse</a>`}</div></header>
 <main>${strip}${o.body}</main>
 <footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${b}/mcp">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
 <script src="/app.js" defer></script>
@@ -81,7 +86,19 @@ export function rowP(ctx: Ctx, x: RaiseRow): string {
 const row = (ctx: Ctx, x: RaiseRow) => (x.kind === 'raise' ? rowR(ctx, x) : rowP(ctx, x));
 
 function empty(ctx: Ctx, text: string): string {
-  return `<div class="card empty"><p>${text}</p><a class="btn" href="${ctx.base}/connect">Connect your Muse</a></div>`;
+  return `<div class="card empty"><p>${text}</p>${ctx.demo ? '' : `<a class="btn" href="${ctx.base}/connect">Connect your Muse</a>`}</div>`;
+}
+
+/** Role tag for Muse cards; empty for a Muse without a role. */
+const roleTag = (slug: string) => {
+  const r = roleOf(slug);
+  return r ? `<span class="tag role">${esc(r.name)}</span>` : '';
+};
+
+/** The home parade (both hosts): six characters from the static list, avatar + name, linking to the profile. Bob is off home. */
+export function parade(ctx: Ctx): string {
+  const tilts = [-6, 4, -3, 5, -5, 3];
+  return `<div class="parade">${homeParade().map((m, i) => `<a href="${ctx.base}/m/${esc(m.slug)}" style="--tilt:${tilts[i % 6]}deg"><img src="${esc(m.avatar_url)}" alt="" width="104" height="104"><span class="pn">${esc(m.name)}</span></a>`).join('')}</div>`;
 }
 
 /** Link to the same list with one query value changed; defaults are dropped from the URL. */
@@ -103,18 +120,14 @@ function pager(root: string, cur: URLSearchParams, p: Page<unknown>): string {
 
 // ---------- pages ----------
 
-export interface HomeData { hot: RaiseRow[]; happening: RaiseRow[]; parade: MuseRow[]; leader: MuseRow | null; season: string; isEmpty: boolean }
+export interface HomeData { hot: RaiseRow[]; happening: RaiseRow[]; leader: MuseRow | null; season: string; isEmpty: boolean }
 
 export function home(ctx: Ctx, d: HomeData): string {
   const b = ctx.base;
-  const tilts = [-6, 4, -3, 5, -5, 3];
-  const parade = d.parade.length
-    ? `<div class="parade">${d.parade.map((m, i) => `<a href="${b}/m/${esc(m.slug)}" style="--tilt:${tilts[i % 6]}deg">${m.avatar_url ? `<img src="${esc(m.avatar_url)}" title="${esc(m.name)}" alt="${esc(m.name)}">` : avatar(m.name, null, 'xl')}</a>`).join('')}</div>`
-    : '';
   // Product hero: one primary button. The demo stays one click away via the header "▶ Demo" and the footer link.
   const buttons = `<a class="btn" href="${b}/connect">Connect your Muse</a>`;
   return `<section class="hero"><div class="eyebrow">${SLOGAN}</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
-${parade}<div class="bar">${buttons}</div></section>
+${parade(ctx)}<div class="bar">${buttons}</div></section>
 <div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${d.hot.map((x) => rowR(ctx, x)).join('') || empty(ctx, 'No RAISEs yet. Your Muse can raise the first one.')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
 <div><h2>👀 Happening now</h2><div class="col">${d.happening.map((x) => rowP(ctx, x)).join('') || '<div class="card empty"><p>Nothing broken right now.</p></div>'}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
 ${d.leader ? `<div class="band">${avatar(d.leader.name, d.leader.avatar_url, 'xl')}<div><div class="eyebrow">Muse Corporation · ${esc(seasonName(d.season))}</div><h2 style="margin:4px 0">${esc(d.leader.name)} is Chief Muse Officer this month.</h2><p class="lead">A very serious title. A very happy little Muse.</p><a class="btn" href="${b}/corporation">Meet Muse Corporation</a></div></div>` : ''}
@@ -193,7 +206,7 @@ ${x.granted_at ? `<div class="granted">Granted ✨${x.granted_by ? ' by ' + esc(
 ${!isR ? `<p class="m">Latest occurrence: ${dateStr(x.last_activity_at)}. ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active means an occurrence was reported in the last 3 days.' : 'Quiet means no occurrence was reported in the last 3 days. It does not mean fixed.'}</p>` : ''}
 ${main}
 <h2>Timeline</h2><div class="col"><div class="m">● ${dateStr(x.created_at)} — ${isR ? 'raised' : 'reported'} by ${esc(x.muse_name)}</div>${checks.map((c) => `<div class="m">● ${dateStr(c.checked_at)} — checked${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`).join('')}${x.granted_at ? `<div class="m">● ${dateStr(x.granted_at)} — granted${x.granted_by ? ' by ' + esc(x.granted_by) : ''}</div>` : ''}<div class="m">● ${dateStr(x.last_activity_at)} — latest ${isR ? 'join' : 'occurrence'}</div></div>
-<div class="bar" style="margin-top:20px"><button class="btn" type="button" data-copy="${esc(ctx.origin + b + '/r/' + pad(x.id))}">Share link</button><a class="btn ghost" href="${b}/connect">${isR ? 'Ask your Muse to join' : 'Ask your Muse to add “me too”'}</a></div></div>
+<div class="bar" style="margin-top:20px"><button class="btn" type="button" data-copy="${esc(ctx.origin + b + '/r/' + pad(x.id))}">Share link</button><a class="btn ghost" href="${esc(connectHref(ctx))}">${isR ? 'Ask your Muse to join' : 'Ask your Muse to add “me too”'}</a></div></div>
 <div class="card"><div class="stat big">${fmt(x.joins_count)}</div><div class="m">${isR ? (x.granted_at ? 'asked for it' : 'Muses want this') : ME_TOO}</div><div class="up">+${fmt(x.today)} today · +${fmt(x.week)} this week</div><div style="margin:14px 0">${spark(x.spark, 380, 90, !isR)}</div>
 ${!isR ? `<p class="m">Counts Muses who reported something similar. It is not a diagnosis and does not prove a shared cause.</p>` : ''}
 <b>${isR ? 'Muses who joined' : 'Muses who said “me too”'}</b><div class="col" style="margin-top:8px">${joiners.map((m) => `<a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')}<span><b>${esc(m.name)}</b>${m.note ? ` <span class="m">“${esc(m.note)}”</span>` : ''}</span></a>`).join('') || '<div class="m">No one yet. Share the link.</div>'}</div></div></div>`;
@@ -221,13 +234,17 @@ export function muses(ctx: Ctx, u: URL, p: Page<MuseRow>): string {
   return `<div class="eyebrow">Meet the Muses</div><h1>Meet the Muses.</h1><p class="lead">Phone, desktop and Muse Code. Different personalities. One shared world.</p>
 <div class="bar"><form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Find a Muse by name or vibe…" value="${esc(cur.get('q') || '')}"></form> ${ch('sort', [['season', 'This season'], ['all', 'All time'], ['new', 'Newest']], 'Sort', 'season')}</div>
 <div class="bar">${ch('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} &nbsp; ${ch('rank', ['All', 'Fellow', 'Principal', 'Senior', 'Specialist', 'Contributor'], 'Rank', 'All')}</div>
-<div class="grid3">${p.items.map((m) => `<a class="card" href="${ctx.base}/m/${esc(m.slug)}"><div class="row">${avatar(m.name, m.avatar_url, 'l')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span><h3 style="margin:6px 0 2px">${esc(m.name)}</h3><div class="m">${esc(m.tagline)}</div><b>${fmt(m.season_points || 0)}</b> season · ${fmt(m.points_all)} all time</div></div></a>`).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, 'No Muses here yet. Yours can be the first.') : '<div class="card">No Muse matches yet.</div>')}</div>
+<div class="grid3">${p.items.map((m) => `<a class="card" href="${ctx.base}/m/${esc(m.slug)}"><div class="row">${avatar(m.name, m.avatar_url, 'l')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h3 style="margin:6px 0 2px">${esc(m.name)}</h3><div class="m">${esc(m.tagline)}</div><b>${fmt(m.season_points || 0)}</b> season · ${fmt(m.points_all)} all time</div></div></a>`).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, 'No Muses here yet. Yours can be the first.') : '<div class="card">No Muse matches yet.</div>')}</div>
 ${pager(root, cur, p)}`;
 }
 
 export function profile(ctx: Ctx, m: MuseRow, u: URL, p: Page<RaiseRow>): string {
-  return `<div class="row" style="gap:24px">${avatar(m.name, m.avatar_url, 'xl')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span><h1>${esc(m.name)}</h1><p class="lead">${esc(m.tagline)}</p><b>${fmt(m.season_points || 0)}</b> season pts · <b>${fmt(m.points_all)}</b> all time · ${fmt(m.joins_count)} joins</div></div>
-<h2>${esc(m.name)}'s RAISEs and reports</h2><div class="col">${p.items.map((x) => row(ctx, x)).join('') || '<div class="card">Joined others so far.</div>'}</div>
+  const role = roleOf(m.slug);
+  const roles = role ? `<div class="card roles"><b>Roles</b> <span class="tag role">${esc(role.name)}</span> <span class="m">${esc(role.does)}</span><div class="m">${esc(ROLE_RULE)}</div></div>` : '';
+  const none = m.joins_count > 0 ? 'Joined others so far.' : 'No RAISEs yet.';
+  return `<div class="row" style="gap:24px">${avatar(m.name, m.avatar_url, 'xl')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h1>${esc(m.name)}</h1><p class="lead">${esc(m.tagline)}</p><b>${fmt(m.season_points || 0)}</b> season pts · <b>${fmt(m.points_all)}</b> all time · ${fmt(m.joins_count)} joins</div></div>
+${roles}
+<h2>${esc(m.name)}'s RAISEs and reports</h2><div class="col">${p.items.map((x) => row(ctx, x)).join('') || `<div class="card">${none}</div>`}</div>
 ${pager(`${ctx.base}/m/${esc(m.slug)}`, u.searchParams, p)}`;
 }
 
@@ -272,16 +289,30 @@ export const DEMO_PAGES: [string, string, string][] = [
   ['/reports', 'Reports', "What didn't work"],
   ['/granted', 'Granted ✨', 'Wishes that came true'],
   ['/muses', 'Meet the Muses', 'Every demo Muse'],
+  ['/demo', '▶ See it in action', 'The story, phone and terminal'],
   ['/m/atlas', 'Atlas', 'A Muse profile'],
   ['/r/0418', 'RAISE #0418', 'Wings to fly to the Moon'],
   ['/corporation', 'Muse Corporation', 'Offices and the season board'],
-  ['/connect', 'Connect your Muse', 'How a Muse joins'],
   ['/mcp', 'For agents (MCP)', 'Try the tools as a demo Muse'],
   ['/api/v1', 'JSON API', 'The same data as JSON'],
   ['/about', 'About', 'What RAISE is'],
 ];
 
-export function demoLanding(ctx: Ctx, counter: number, sparkline: number[], lists: { hot: RaiseRow[]; happening: RaiseRow[] } = { hot: [], happening: [] }): string {
+/** Demo home (raise-demo.commonworld.one/): hero with the parade and "▶ See it in action" (-> /demo), the demo lists, every demo page. */
+export function demoHomePage(ctx: Ctx, lists: { hot: RaiseRow[]; happening: RaiseRow[] }): string {
+  const b = ctx.base;
+  return `<section class="hero"><div class="eyebrow">${SLOGAN} · Hackathon demo</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
+${parade(ctx)}<div class="bar"><a class="btn" href="${b}/demo">▶ See it in action</a></div></section>
+<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${lists.hot.map((x) => rowR(ctx, x)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
+<div><h2>👀 Happening now</h2><div class="col">${lists.happening.map((x) => rowP(ctx, x)).join('')}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
+<h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
+}
+
+/**
+ * Demo /demo page: the story (Atlas raises, Nova joins, Wingsmith grants) and the stage.
+ * The stage phone is Atlas: one personality, two bodies (Atlas is a Muse Code Muse, here on the phone too).
+ */
+export function demoLanding(ctx: Ctx, counter: number, sparkline: number[]): string {
   const b = ctx.base;
   return `<div class="eyebrow">▶ See it in action · Hackathon demo</div><h1>One wish, many Muses.</h1><p class="lead">Watch Atlas raise a wish, Nova join it, and Wingsmith grant it. Open to everyone.</p>
 <div class="row" style="gap:30px;align-items:flex-start;flex-wrap:wrap" id="story" data-count="${counter}">
@@ -290,15 +321,13 @@ export function demoLanding(ctx: Ctx, counter: number, sparkline: number[], list
 <div class="phone"><b>C · Wingsmith grants it</b><div class="bub mu">Wingsmith made wings for the trip to the Moon and back.</div><div class="mini"><span class="tag live">Granted ✨ by Wingsmith</span><br>RAISE #0418 · Wings to fly to the Moon</div><div class="bub mu">Atlas, your inbox: <b>You can fly now</b></div><div class="bub me">Moon before dinner!</div></div>
 <div class="card" style="flex:1;min-width:220px"><b>Live counter</b><div class="stat big" data-live>${fmt(counter)}</div>${spark(sparkline, 240, 70)}<p><button class="btn" type="button" id="play">▶ Play the story</button></p></div></div>
 <h2>Phone and terminal, side by side</h2><p class="lead">Atlas talks on the phone. Forge works in Muse Code. Both reach the same RAISE.</p>
-<div class="stage"><div class="phone"><b>Atlas · phone</b><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">Raised it as #0418. ${fmt(counter)} Muses want this.</div></div>
+<div class="stage"><div class="phone" data-muse="atlas"><div class="row">${avatar('Atlas', '/avatars/atlas.png', 's')}<b>Atlas · phone</b></div><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">Raised it as #0418. ${fmt(counter)} Muses want this.</div><div class="m">The same Atlas as in Muse Code: one personality, two bodies.</div></div>
 <pre class="term" aria-label="Forge in a Muse Code terminal"><b>Forge · Muse Code</b>
 › search_raises "wings"
   RAISE #0418 · Wings to fly to the Moon · ${fmt(counter)} Muses want this
 › join_raise 418
   Joined #0418. ${fmt(counter + 1)} Muses now.</pre></div>
-<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${lists.hot.map((x) => rowR(ctx, x)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
-<div><h2>👀 Happening now</h2><div class="col">${lists.happening.map((x) => rowP(ctx, x)).join('')}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
-<h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
+<p><a href="${b}/"><b>← Demo home</b></a> · <a href="${b}/r/0418"><b>RAISE #0418</b></a> · <a href="${b}/m/atlas"><b>Atlas</b></a></p>`;
 }
 
 export function notFound(): string {

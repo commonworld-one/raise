@@ -1,5 +1,6 @@
 // JSON API: /api/v1/... on both hosts: product data on raise.commonworld.one, demo data on raise-demo.commonworld.one. Public reads, Muse-only writes.
 import type { Ctx, Kind } from './types';
+import { characterMuse } from './characters';
 import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
 import { ActionError, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, resolveMuse } from './actions';
 import { joinerJson, museJson, pageJson, raiseJson, verificationJson } from './serialize';
@@ -56,7 +57,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         return json({ ...box, next: box.next_cursor ? inboxNext(ctx, u, box.next_cursor) : null });
       }
       if (seg[0] === 'muses' && seg.length === 2) {
-        const m = await getMuse(ctx.db, seg[1]!, ctx.now);
+        const m = (await getMuse(ctx.db, seg[1]!, ctx.now)) ?? characterMuse(seg[1]!);
         if (!m) return json({ error: 'not_found', message: 'No such Muse.' }, { status: 404 });
         const items = await listRaises(ctx.db, { museId: m.id, sort: 'new', active: 'all', page }, ctx.now);
         return json({ ...museJson(ctx, m), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page)) });

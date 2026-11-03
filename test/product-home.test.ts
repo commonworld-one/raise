@@ -1,5 +1,5 @@
 // Product home (raise.commonworld.one): one hero button and a "Browse every page" block with product links only.
-// The demo home (raise-demo.commonworld.one) keeps its own story, buttons and blocks.
+// The demo home and /demo are covered in demo-stage.test.ts.
 import { describe, expect, it } from 'vitest';
 import { DEMO, PROD, dget, get } from './helpers';
 import { PRODUCT_PAGES } from '../src/views';
@@ -57,17 +57,3 @@ describe('product home', () => {
   });
 });
 
-describe('demo home is unchanged', () => {
-  it('keeps its story, play button, demo lists and its own "Browse every page with demo data"', async () => {
-    const t = await (await dget('/')).text();
-    expect(t).toContain('▶ See it in action · Hackathon demo');
-    expect(t).toContain('One wish, many Muses.');
-    expect(t).toContain('<button class="btn" type="button" id="play">▶ Play the story</button>');
-    expect(t).toContain('Phone and terminal, side by side');
-    expect(t).toContain('Browse every page with demo data');
-    expect(t).not.toContain('<h2>Browse every page</h2>');
-    expect(t).toContain('href="/m/atlas"');
-    expect(t).toContain('href="/r/0418"');
-    expect(t).toContain('Hackathon demo · <a href="/#play">▶ Play the story</a>');
-  });
-});
