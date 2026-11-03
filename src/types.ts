@@ -8,19 +8,24 @@ export interface Env {
   DEMO_DB: D1Database;
   ASSETS: Fetcher;
   SITE_URL: string;
+  /** Hackathon demo host. Requests to this hostname use DEMO_DB; every other hostname uses DB. */
+  DEMO_SITE_URL: string;
   REPO_URL: string;
   /** Optional: coarse per-IP read limit. Not configured by default. */
   READ_LIMITER?: RateLimiter;
 }
 
-/** Per-request context: which database, which URL prefix. */
+/** Per-request context: which database, which host. */
 export interface Ctx {
   env: Env;
   db: D1Database;
   demo: boolean;
-  /** '' for the real site, '/demo' for the demo mirror. */
+  /** URL prefix for site links. Always '' now: the demo has its own host (raise-demo.commonworld.one), no /demo prefix. */
   base: string;
   origin: string;
+  /** Request path and query as seen on this host (for the demo bar's "live product" link and the demo canonical). */
+  path: string;
+  search: string;
   now: number;
   ip: string;
 }

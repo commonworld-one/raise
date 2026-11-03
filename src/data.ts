@@ -1,5 +1,5 @@
 // Data access. Every function takes the D1 database explicitly, so the same
-// code serves raise-prod (real site) and raise-demo (/demo mirror).
+// code serves raise-prod (real site) and raise-demo (raise-demo.commonworld.one).
 import type { Active, Kind, Sort } from './types';
 import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
 

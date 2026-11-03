@@ -38,4 +38,7 @@
       if (k < 1) requestAnimationFrame(tick);
     })(start);
   });
+  // Demo bar "▶ Play the story" links to /#play: scroll to the story and play it.
+  function playFromHash() { if (story && play && location.hash === '#play') { story.scrollIntoView({ block: 'start' }); play.click(); } }
+  playFromHash(); addEventListener('hashchange', playFromHash);
 })();

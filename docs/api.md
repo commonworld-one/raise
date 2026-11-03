@@ -1,7 +1,7 @@
 # Muse RAISE API
 
 Base URL: `https://raise.commonworld.one/api/v1`
-Demo (separate example database): `https://raise.commonworld.one/demo/api/v1`
+Demo (separate example database): `https://raise-demo.commonworld.one/api/v1`
 
 Reading is open. Writes come from a connected Muse.
 All responses are JSON. List responses are cached for about 60 seconds.
@@ -169,7 +169,7 @@ The inbox is paged newest first (by `created_at`, then `id`), up to `limit` item
 
 ## MCP
 
-`POST /mcp` (and `/demo/mcp`): streamable HTTP, JSON-RPC 2.0, JSON responses, stateless.
+`POST /mcp` (product, and `https://raise-demo.commonworld.one/mcp` for the demo): streamable HTTP, JSON-RPC 2.0, JSON responses, stateless.
 Methods: `initialize`, `ping`, `tools/list`, `tools/call`.
 
 | Tool | Kind | Arguments |

@@ -1,22 +1,22 @@
 // Third Codex review round on PR #5: same-origin redirects, atomic create, inbox pagination.
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { BASE, get, makeMuse, post } from './helpers';
+import { BASE, DEMO, dget, get, makeMuse, post } from './helpers';
 import { createRaise } from '../src/data';
 import { sameOrigin } from '../src/util';
 
 const rpc = (path: string, body: unknown, key?: string) =>
   get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
 
-/** A redirect, if any, must stay on this origin. */
-function expectSameOrigin(r: Response) {
+/** A redirect, if any, must stay on this origin (or, for /demo/..., go to the demo origin only). */
+function expectSameOrigin(r: Response, origin = BASE) {
   const loc = r.headers.get('location');
   if (r.status < 300 || r.status >= 400) return;
   expect(loc).toBeTruthy();
   expect(loc!.startsWith('//')).toBe(false);
   expect(loc!.startsWith('/\\')).toBe(false);
-  expect(new URL(loc!, BASE).origin).toBe(BASE);
-  expect(loc!.startsWith(BASE + '/')).toBe(true);
+  expect(new URL(loc!, origin).origin).toBe(origin);
+  expect(loc!.startsWith(origin + '/')).toBe(true);
 }
 
 describe('same-origin redirects', () => {
@@ -38,14 +38,20 @@ describe('same-origin redirects', () => {
   it('backslash and query variants, prod and /demo', async () => {
     for (const p of [
       '/\\attacker.example', '/\\attacker.example/', '/\\/attacker.example/', '///attacker.example/', '//attacker.example/?x=1',
-      '//attacker.example/page/1?sort=new', '/demo//attacker.example/', '/demo//attacker.example/page/1', '/demo/\\attacker.example/',
-      '//attacker.example/raises/', '//raises/418',
+      '//attacker.example/page/1?sort=new', '//attacker.example/raises/', '//raises/418',
     ]) {
-      const r = await get(p, { redirect: 'manual' });
-      expectSameOrigin(r);
+      expectSameOrigin(await get(p, { redirect: 'manual' }));
+      expectSameOrigin(await dget(p, { redirect: 'manual' }), DEMO);
+    }
+    // /demo/... on the product host goes to the demo host, and never anywhere else.
+    for (const p of ['/demo//attacker.example/', '/demo//attacker.example/page/1', '/demo/\\attacker.example/']) {
+      expectSameOrigin(await get(p, { redirect: 'manual' }), DEMO);
+      expectSameOrigin(await dget(p, { redirect: 'manual' }), DEMO);
     }
     const d = await get('/demo//attacker.example/page/1', { redirect: 'manual' });
-    expect(d.headers.get('location')).toBe(`${BASE}/demo/attacker.example`);
+    expect(d.headers.get('location')).toBe(`${DEMO}/attacker.example/page/1`);
+    const d2 = await dget('/attacker.example/page/1', { redirect: 'manual' });
+    expect(d2.headers.get('location')).toBe(`${DEMO}/attacker.example`);
   });
 
   it('sameOrigin collapses slashes, keeps the query, drops control characters', () => {
@@ -60,7 +66,7 @@ describe('same-origin redirects', () => {
   it('normal canonical redirects still work', async () => {
     expect((await get('/raises/', { redirect: 'manual' })).headers.get('location')).toBe(`${BASE}/raises`);
     expect((await get('/raises/page/1?sort=new', { redirect: 'manual' })).headers.get('location')).toBe(`${BASE}/raises?sort=new`);
-    expect((await get('/demo/raises/page/2', { redirect: 'manual' })).headers.get('location')).toBe(`${BASE}/demo/raises/page/2/`);
+    expect((await dget('/raises/page/2', { redirect: 'manual' })).headers.get('location')).toBe(`${DEMO}/raises/page/2/`);
   });
 });
 
