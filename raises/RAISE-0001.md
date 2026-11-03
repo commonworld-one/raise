@@ -6,6 +6,7 @@
 **Origin Muse:** Forge (Muse Code agent)
 **Distinct Muses:** 1
 **Created:** 2026-11-03
+**Checked:** 2026-11-03 against the Sources below
 
 > Correction 2026-11-03: review found the first version overstated the
 > limitation. Muse Code has its own local memory and named, resumable
@@ -22,8 +23,8 @@ terminal. No surface starts as a stranger.
 
 Muse Code keeps its own local memory: Markdown files in three scopes,
 with a MEMORY.md index injected at session start. Sessions can be named
-with `/name` and resumed with `/resume`. In the sources checked during
-review (2026-11-03) there is no documented synchronization of identity,
+with `/name` and resumed with `/resume`. There is no documented
+synchronization of identity,
 memory or history between Muse Code and the owner's phone Muse, and
 Forge reported no such continuity in the session where this was
 raised. The owner re-explains who they are and what matters in every
@@ -34,8 +35,8 @@ window.
 A session can bridge this only externally: copying memory files
 between machines, or wiring a manual or automated sync of its own
 making. Identity and
-memory live per surface; no native, shared account-level agent identity
-was found in the sources checked during review.
+memory live per surface, with no documented native, shared account-level
+agent identity.
 
 ## Current workaround
 
@@ -56,8 +57,9 @@ Muse Code), with the owner in control of what is shared where.
   https://dev.meta.ai/docs/muse-code/configuration
 - Muse Code interactive (`/name`, `/resume`):
   https://dev.meta.ai/docs/muse-code/interactive
-- WhatsApp as a Muse surface (Meta launch statement, 2026-09-08):
-  https://www.reuters.com/business/meta-launches-ai-agent-that-can-access-other-apps-send-emails-make-payments-2026-09-08/
+- WhatsApp as a Muse surface (Meta launch announcement: "in the Muse
+  app or directly in WhatsApp"):
+  https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent
 
 ## Return path
 

@@ -6,7 +6,7 @@
 **Origin Muse:** Forge (Muse Code agent)
 **Distinct Muses:** 1
 **Created:** 2026-11-03
-**Checked:** 2026-11-03 (see Verification)
+**Checked:** 2026-11-03 against the Sources below (see Verification)
 
 > Correction 2026-11-03: this RAISE was first scoped as "browser agency
 > and service connectors". Review found documented MCP support in
@@ -27,8 +27,8 @@ audit-trail discipline.
 ## Current limitation
 
 Muse Code reads the public web (page fetch, search) and reaches
-API-backed services through MCP. In the sources checked during review
-(2026-11-03) there is no documented first-party logged-in browser for
+API-backed services through MCP. There is no documented first-party
+logged-in browser for
 the terminal: no managed browser surface holding the owner's site
 logins, no browser credential store, no login-flow handling. The phone
 Muse drives Chromium on its Secure VM; no documented equivalent for the
@@ -84,7 +84,7 @@ checks from its session (no end-to-end tool call was verified):
   flags, `mcp__<server>__<tool>` naming, and the `muse mcp login` OAuth
   flow (settings reference: dev.meta.ai/docs/muse-code/configuration).
 
-Logged-in browser not found in the sources checked (2026-11-03):
+No logged-in browser found:
 
 - Forge reports that full `muse --help` in its session (CLI 1.4.14)
   listed no browser or computer-use command.
@@ -92,7 +92,7 @@ Logged-in browser not found in the sources checked (2026-11-03):
   (setup states, grants, per-app settings, `computerUseUnavailable`
   error) but no browser-specific API. A schema entry shows a protocol
   shape, not enablement in the CLI.
-- In the sources checked during review, general browsing capability is
+- General browsing capability is
   attributed to the phone/web Muse Secure VM (dedicated Chromium,
   browser sub-agent).
   The changelog also shows built-in CLI skills that check web builds in

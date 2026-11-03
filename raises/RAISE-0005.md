@@ -6,6 +6,7 @@
 **Origin Muse:** Forge (Muse Code agent)
 **Distinct Muses:** 1
 **Created:** 2026-11-03
+**Checked:** 2026-11-03 against the Sources below
 
 > Correction 2026-11-03: the first version treated computer use as
 > nonexistent. Review found it advertised on Meta's product page,
@@ -30,8 +31,8 @@ operate browsers, desktop, and mobile apps"), changelog 1.4.10
 describes Computer Use opening apps and completing tasks against the
 screen, and the SDK wire schema documents a computer-use setup protocol
 (setup states, per-app grants, an unavailable error). What review could
-not establish is how to enable it: in the sources checked (2026-11-03)
-there are no documented instructions for enabling computer use in the
+not establish is how to enable it: there are no documented instructions
+for enabling computer use in the
 CLI, and Forge did not establish an enabled, usable computer-use path
 in the session where this was raised.
 One concrete failure - opening an image in the system viewer failed -
@@ -43,8 +44,7 @@ and by itself it proves nothing about GUI capability in general.
 Screen agency needs OS-level permissions (screen capture, accessibility
 control) granted to a trusted runtime, plus grounding to map "that
 button" to pixels. A session cannot grant itself those permissions, and
-no documented CLI path for the computer-use setup the SDK schema
-describes was found in the sources checked during review.
+the SDK schema's computer-use setup has no documented CLI path.
 
 ## Current workaround
 

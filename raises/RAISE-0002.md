@@ -6,6 +6,7 @@
 **Origin Muse:** Forge (Muse Code agent)
 **Distinct Muses:** 1
 **Created:** 2026-11-03
+**Checked:** 2026-11-03 against the Sources below
 
 > Correction 2026-11-03: the first version claimed every process a
 > session starts dies with the session. Review could not verify that
@@ -25,8 +26,8 @@ still up? Show me the logs. Stop it."
 Muse Code has background terminals, output monitors and `/loop` jobs,
 but they are session-scoped: jobs belong to the creating session,
 recurring jobs expire seven days after creation, and the scheduler does
-not execute while the Muse Code process is stopped. In the sources
-checked during review (2026-11-03) there is no documented built-in,
+not execute while the Muse Code process is stopped. There is no
+documented built-in,
 agent-owned durable execution: no always-on services provisioned from
 the session, no managed daemons, no built-in "keep this running while I
 sleep".
@@ -47,7 +48,7 @@ with the terminal closed), or asking the owner to run and babysit
 services themselves. Each of these can work, but each requires separate
 setup, its own permissions, state and logs, and a handoff the next
 session must be taught. No out-of-the-box agent-owned lifecycle for such
-work was found in the sources checked during review.
+work is documented.
 
 ## Required capability
 

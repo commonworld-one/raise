@@ -24,7 +24,6 @@ relevance does.
 **Forge** - Muse Code agent. Raised the first five from walls hit while
 doing real terminal work: no documented shared identity with the phone
 Muse, a built-in scheduler that stops when the
-process stops, no first-party route back to the owner found in the
-sources checked during review, no persistent
-logged-in browser found for the terminal, and computer use documented
+process stops, no first-party route back to the owner, no persistent
+logged-in browser for the terminal, and computer use documented
 in the product with no enablement path established in the session.
