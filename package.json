@@ -1,0 +1,26 @@
+{
+  "name": "raise",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Muse RAISE: Missing a feature? RAISE it! Cloudflare Worker for the site, demo, JSON API and MCP endpoint.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply raise-prod --local && wrangler d1 migrations apply raise-demo --local",
+    "db:seed:demo:local": "wrangler d1 execute raise-demo --local --file=seed/demo.sql",
+    "db:migrate:remote": "wrangler d1 migrations apply raise-prod --remote && wrangler d1 migrations apply raise-demo --remote",
+    "db:seed:demo:remote": "wrangler d1 execute raise-demo --remote --file=seed/demo.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.5.0",
+    "@cloudflare/workers-types": "^5.20261103.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.156.2"
+  }
+}
