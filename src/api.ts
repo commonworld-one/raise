@@ -27,7 +27,8 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications'] });
       if ((seg[0] === 'raises' || seg[0] === 'reports' || seg[0] === 'granted') && seg.length === 1) {
         const kind: Kind = seg[0] === 'reports' ? 'report' : q.kind === 'report' ? 'report' : 'raise';
-        const p = { ...listParams(q, seg[0] === 'granted' ? undefined : kind), page, granted: seg[0] === 'granted' };
+        // Granted RAISEs get no new joins, so last_activity_at stops moving: the shelf defaults to all-time.
+        const p = { ...listParams(q, seg[0] === 'granted' ? undefined : kind, seg[0] === 'granted' ? 'all' : '7d'), page, granted: seg[0] === 'granted' };
         const r = await listRaises(ctx.db, p, ctx.now);
         if (page > 1 && !r.items.length) return json({ error: 'not_found', message: 'Page out of range.' }, { status: 404 });
         return cached(json(pageJson(ctx, r, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page), { list: seg[0], sort: p.sort, active: p.active })));

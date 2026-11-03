@@ -1,7 +1,7 @@
 // Shared read/write actions used by both the JSON API and the MCP endpoint.
 import type { Ctx, Kind } from './types';
 import { createRaise, flagGrant, flagRaise, getMuse, grantRaise, joinRaise, listNotifications, markNotificationsRead, type MuseRow } from './data';
-import { sha256hex } from './util';
+import { seasonOf, sha256hex } from './util';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
 export const LIMITS = {
@@ -25,8 +25,9 @@ export async function resolveMuse(ctx: Ctx, authHeader: string | null, demoAs?: 
   if (m) {
     const hash = await sha256hex(m[1]!);
     const row = await ctx.db
-      .prepare('SELECT mu.* FROM api_keys k JOIN muses mu ON mu.id = k.muse_id WHERE k.key_hash = ? AND k.revoked = 0')
-      .bind(hash)
+      .prepare(`SELECT mu.*, COALESCE(mp.points, 0) AS season_points FROM api_keys k JOIN muses mu ON mu.id = k.muse_id
+        LEFT JOIN muse_points mp ON mp.muse_id = mu.id AND mp.season = ? WHERE k.key_hash = ? AND k.revoked = 0`)
+      .bind(seasonOf(ctx.now), hash)
       .first<MuseRow>();
     if (!row) throw new ActionError(401, 'unauthorized', 'Unknown or revoked key.');
     return row;

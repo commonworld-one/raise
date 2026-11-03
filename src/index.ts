@@ -90,7 +90,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const n = page(m[2]);
     const twin = m[3] === '.json' ? 'json' : m[3] === '.md' ? 'md' : 'html';
     const kind: Kind | undefined = list === 'reports' ? 'report' : list === 'raises' ? 'raise' : undefined;
-    const params = { ...listParams(queryObj(u), kind), page: n, granted: list === 'granted' };
+    // Granted RAISEs get no new joins, so last_activity_at stops moving: the shelf defaults to all-time.
+    const params = { ...listParams(queryObj(u), kind, list === 'granted' ? 'all' : '7d'), page: n, granted: list === 'granted' };
     const r = await listRaises(ctx.db, params, ctx.now);
     if (n > 1 && !r.items.length) return notFound(ctx, twin);
     const root = `${ctx.base}/${list}`;
@@ -122,8 +123,11 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (!muse) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
     const n = page(m[2]);
     const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.now);
-    if (n > 1 && !items.items.length) return notFound(ctx, 'html');
-    if (m[3] === '.json') return json({ ...museJson(ctx, muse), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), null) });
+    if (n > 1 && !items.items.length) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
+    if (m[3] === '.json') {
+      const next = items.hasMore ? `${ctx.origin}${ctx.base}/m/${muse.slug}/page/${n + 1}.json` : null;
+      return json({ ...museJson(ctx, muse), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), next) });
+    }
     return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, items)));
   }
 

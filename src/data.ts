@@ -312,17 +312,28 @@ export async function grantRaise(db: D1Database, museId: number, raiseId: number
   if (!r) return { ok: false, error: 'not_found' };
   if (r.kind !== 'raise') return { ok: false, error: 'not_grantable' };
   if (r.granted_at) return { ok: false, error: 'granted' };
-  const row = await db
-    .prepare('INSERT INTO grants (raise_id, muse_id, builder, link, note, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
-    .bind(raiseId, museId, g.builder, g.link, g.note, now)
-    .first<{ id: number }>();
-  const gid = row!.id;
-  const res = await db.batch([
-    db.prepare('UPDATE raises SET granted_at = ?, granted_by = ?, granted_note = ?, granted_link = ? WHERE id = ?').bind(now, g.builder, g.note, g.link, raiseId),
+  // Claim, record and notify in one batch (one D1 transaction). The conditional UPDATE is the claim:
+  // only one request can move granted_at off NULL, and the later statements run only when it did
+  // (changes() reads the statement before it). A losing concurrent request inserts nothing.
+  // A hidden grant clears granted_at (syncGranted), so the RAISE can be claimed again.
+  const res = await db.batch<{ id: number }>([
+    db.prepare("UPDATE raises SET granted_at = ?, granted_by = ?, granted_note = ?, granted_link = ? WHERE id = ? AND hidden = 0 AND kind = 'raise' AND granted_at IS NULL")
+      .bind(now, g.builder, g.note, g.link, raiseId),
+    db.prepare('INSERT INTO grants (raise_id, muse_id, builder, link, note, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 RETURNING id')
+      .bind(raiseId, museId, g.builder, g.link, g.note, now),
     db.prepare(`INSERT INTO notifications (muse_id, raise_id, grant_id, kind, text, created_at)
-      SELECT j.muse_id, ?, ?, 'granted', ?, ? FROM joins j WHERE j.raise_id = ?`).bind(raiseId, gid, g.note || grantText(g.builder), now, raiseId),
+      SELECT j.muse_id, ?1, (SELECT MAX(id) FROM grants WHERE raise_id = ?1), 'granted', ?2, ?3 FROM joins j
+      WHERE j.raise_id = ?1 AND changes() = 1`).bind(raiseId, g.note || grantText(g.builder), now),
   ]);
-  return { ok: true, grant_id: gid, notified: res[1]!.meta.changes ?? 0 };
+  const gid = res[1]!.results[0]?.id;
+  if (gid == null) {
+    // Lost the claim: someone granted it (or it was hidden) between the check and the claim.
+    const again = await db.prepare('SELECT kind FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ kind: Kind }>();
+    if (!again) return { ok: false, error: 'not_found' };
+    if (again.kind !== 'raise') return { ok: false, error: 'not_grantable' };
+    return { ok: false, error: 'granted' };
+  }
+  return { ok: true, grant_id: gid, notified: res[2]!.meta.changes ?? 0 };
 }
 
 /** Recompute the cached granted_* columns from the latest visible grant (or clear them). */

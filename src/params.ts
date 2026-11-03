@@ -7,13 +7,14 @@ export const SORTS = ['hot', 'rising', 'top', 'new'] as const;
 export const ACTIVES = ['24h', '7d', '30d', 'all'] as const;
 export const CLIENTS = ['Muse', 'Muse Code'] as const;
 
-export function listParams(src: Record<string, unknown>, kind?: Kind): ListParams {
+/** `activeDefault`: the window used when the query names none (the Granted shelf passes 'all'). */
+export function listParams(src: Record<string, unknown>, kind?: Kind, activeDefault: Active = '7d'): ListParams {
   const s = (k: string) => (typeof src[k] === 'string' ? (src[k] as string).trim() : undefined);
   const state = s('state');
   return {
     kind,
     sort: pick<Sort>(s('sort'), SORTS, 'hot'),
-    active: pick<Active>(s('active'), ACTIVES, '7d'),
+    active: pick<Active>(s('active'), ACTIVES, activeDefault),
     category: s('type') || s('category') || undefined,
     client: CLIENTS.includes(s('from') as any) ? s('from') : undefined,
     state: state === 'active' || state === 'quiet' ? state : undefined,
