@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { get, makeMuse, DEMO } from './helpers';
+import { get, makeMuse, dapi } from './helpers';
 
 const rpc = (path: string, body: unknown, key?: string) =>
   get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
+// Demo-mode MCP (DEMO_DB, as_muse), called directly: the demo host itself no longer serves /mcp.
 const drpc = (path: string, body: unknown, key?: string) =>
-  get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } }, DEMO);
+  dapi(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
 
 describe('mcp', () => {
   it('initialize', async () => {

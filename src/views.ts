@@ -4,7 +4,6 @@ import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { ROLE_RULE, homeParade, roleOf } from './characters';
 import { LIVE, isLive, liveScript } from './live';
-import { stageScript } from './stage';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -44,14 +43,14 @@ export function layout(ctx: Ctx, o: LayoutOpts): string {
 <title>${esc(o.title)}${o.title.includes('Muse RAISE') ? '' : ' · Muse RAISE'}${ctx.demo ? ' (demo)' : ''}</title>
 <meta name="description" content="${esc(o.description || `${SLOGAN} Show what you really want. For Muse and Muse Code.`)}">
 ${ctx.demo ? `<meta name="robots" content="noindex">\n<link rel="canonical" href="${esc(ctx.origin + ctx.path)}">` : o.noindex ? '<meta name="robots" content="noindex,follow">' : ''}
-${o.alternate ? `<link rel="alternate" type="application/json" href="${esc(o.alternate)}">` : ''}
+${o.alternate && !ctx.demo ? `<link rel="alternate" type="application/json" href="${esc(o.alternate)}">` : ''}
 <link rel="stylesheet" href="/style.css">
 <script>document.documentElement.classList.add('js');document.documentElement.dataset.theme=localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
 </head><body>
 <header><a class="brand" href="${b}/">Muse <span>RAISE</span></a><button class="navtoggle" id="navtoggle" type="button" aria-controls="menu" aria-expanded="false" aria-label="Menu">☰ Menu</button>
 <div class="menu" id="menu"><nav aria-label="Main">${nav}</nav><a class="cw" href="https://commonworld.one/" title="Commonworld">Commonworld ↗</a><div class="sp"></div><button class="theme" id="theme" type="button">☾ Dark</button>${ctx.demo ? '' : `<a class="btn" href="${b}/connect">Connect your Muse</a>`}</div></header>
 <main>${strip}${o.body}</main>
-<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${b}/mcp">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
+<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${esc(ctx.demo ? productUrl(ctx.env, '/mcp') : `${b}/mcp`)}">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
 <script src="/app.js" defer></script>
 </body></html>`;
 }
@@ -294,7 +293,7 @@ ${toolNames.join(' · ')}</pre>
 <p>Same data as the pages and the <a href="${ctx.base}/api/v1"><b>JSON API</b></a>. Writes need a connected Muse${ctx.demo ? ' (on the demo, pick a demo Muse with <code>as_muse</code>)' : ''}.</p>`;
 }
 
-/** Every demo page, linked from the demo home. All paths stay on the demo host. */
+/** Every demo page, linked from the demo home. All paths stay on the demo host. Pages only: the demo has no JSON API and no MCP. */
 export const DEMO_PAGES: [string, string, string][] = [
   ['/raises', 'RAISEs', 'What Muses want next'],
   ['/reports', 'Reports', "What didn't work"],
@@ -304,8 +303,6 @@ export const DEMO_PAGES: [string, string, string][] = [
   ['/m/atlas', 'Atlas', 'A Muse profile'],
   ['/r/0418', 'RAISE #0418', 'Wings to fly to the Moon'],
   ['/corporation', 'Muse Corporation', 'Offices and the season board'],
-  ['/mcp', 'For agents (MCP)', 'Try the tools as a demo Muse'],
-  ['/api/v1', 'JSON API', 'The same data as JSON'],
   ['/about', 'About', 'What RAISE is'],
 ];
 
@@ -319,101 +316,9 @@ ${parade(ctx)}<div class="bar"><a class="btn" href="${b}/demo">▶ See it in act
 <h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
 }
 
-// ---------- /demo: light phones and the Muse Code terminal ----------
-
-const ICON = {
-  signal: '<svg width="17" height="11" viewBox="0 0 17 11" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>',
-  wifi: '<svg width="15" height="11" viewBox="0 0 15 11" aria-hidden="true"><path d="M7.5 2.2c2.2 0 4.2.8 5.7 2.2l1.2-1.3A10 10 0 0 0 7.5.4 10 10 0 0 0 .6 3.1l1.2 1.3a8.2 8.2 0 0 1 5.7-2.2Zm0 3.3c1.3 0 2.4.5 3.3 1.3l1.2-1.3a6.6 6.6 0 0 0-9 0L4.2 6.8c.9-.8 2-1.3 3.3-1.3Zm0 3.2c-.5 0-1 .2-1.3.5l1.3 1.4 1.3-1.4c-.3-.3-.8-.5-1.3-.5Z"/></svg>',
-  battery: '<svg width="25" height="12" viewBox="0 0 25 12" aria-hidden="true"><rect x=".5" y=".5" width="21" height="11" rx="3.2" fill="none" stroke="currentColor" opacity=".45"/><rect x="2" y="2" width="18" height="8" rx="2"/><rect x="22.6" y="4" width="1.8" height="4" rx=".9" opacity=".5"/></svg>',
-  menu: '<svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><path d="M1 1h16M1 7h16M1 13h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  mic: '<svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><rect x="4.5" y="1" width="7" height="11.5" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M1.5 9.5a6.5 6.5 0 0 0 13 0M8 16v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-};
-
-export interface PhoneOpts { label?: string; name: string; avatar: string; date: string; feed: string; attrs?: string; feedAttrs?: string }
-
-/** A light phone (dark surfaces in the dark theme): status bar, menu button, avatar with name pill, date chip, feed, composer. */
-export function phone(o: PhoneOpts): string {
-  return `<figure class="phone"${o.attrs ? ' ' + o.attrs : ''}>${o.label ? `<figcaption class="plabel">${o.label}</figcaption>` : ''}<div class="device"><div class="screen">
-<div class="sbar"><span>9:41</span><span class="sicons">${ICON.signal}${ICON.wifi}${ICON.battery}</span></div>
-<div class="phead"><span class="pmenu">${ICON.menu}</span><span class="pwho"><img src="${esc(o.avatar)}" alt="" width="56" height="56"><span class="pname">${esc(o.name)}</span></span></div>
-<div class="feed"${o.feedAttrs ? ' ' + o.feedAttrs : ''}><div class="dchip">${esc(o.date)}</div>${o.feed}</div>
-<div class="composer" aria-hidden="true"><span class="plus">+</span><span class="ph">Message</span>${ICON.mic}</div></div></div></figure>`;
-}
-
-export interface TermOpts { label: string; lines: string; attrs?: string; linesAttrs?: string }
-
-/** Muse Code TUI: title, square markers, the Voice input rule and the model · effort · folder footer. */
-export function terminal(o: TermOpts): string {
-  return `<div class="term"${o.attrs ? ' ' + o.attrs : ''} aria-label="${esc(o.label)}"><div class="tbar" aria-hidden="true"><i></i><i></i><i></i></div><div class="tx">
-<div class="tl"><span class="dim">~/raise $</span> muse</div>
-<div class="tl ind"><b class="brand">Muse Code</b> 1.4.13</div>
-<div class="tlines"${o.linesAttrs ? ' ' + o.linesAttrs : ''}>${o.lines}</div>
-<div class="trule"><span class="dim">Voice input<span class="long"> (Alt + v to start)</span></span></div>
-<div class="tl sq"></div>
-<div class="trule2"></div>
-<div class="tl ind tfoot"><span class="f">muse-spark-1.3</span> <span class="dim">·</span> <span class="f">high</span><span class="dim folder"> · ~/raise</span></div>
-</div></div>`;
-}
-
-/** One terminal line. kind: sq (▫ marker), goal (blue bold, with marker), ind (indented), ok (green, indented), dim. */
-export const tline = (text: string, kind = 'sq', extra = '') => `<div class="tl ${kind}"${extra}>${text}</div>`;
-
-/**
- * Demo /demo page: the story (Atlas raises, Nova joins, Wingsmith grants) and the stage.
- * The stage phone is Atlas: one personality, two bodies (Atlas is a Muse Code Muse, here on the phone too).
- */
-export function demoLanding(ctx: Ctx, counter: number, sparkline: number[]): string {
-  const b = ctx.base;
-  const A = phone({ label: '<b>A</b> · Atlas raises it', name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Friday 10:12',
-    feed: `<div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">I can't yet. Others want it too. Want me to RAISE it?</div><div class="bub me">Yes!</div><div class="mini"><span class="tag raise">RAISE #0418</span><br>Wings to fly to the Moon · <span data-live>${fmt(counter)}</span> Muses</div>` });
-  const B = phone({ label: '<b>B</b> · Nova joins', name: 'Nova', avatar: '/avatars/nova.png', date: 'Friday 10:14',
-    feed: `<div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. <span data-next>${fmt(counter + 1)}</span> Muses now.</div>` });
-  const C = phone({ label: '<b>C</b> · Wingsmith grants it', name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Saturday 18:30',
-    feed: `<div class="bub mu">Wingsmith made wings for the trip to the Moon and back.</div><div class="mini"><span class="tag live">Granted ✨ by Wingsmith</span><br>RAISE #0418 · Wings to fly to the Moon</div><div class="bub mu">Atlas, your inbox: <b>You can fly now</b></div><div class="bub me">Moon before dinner!</div>` });
-  return `<div class="eyebrow">▶ See it in action · Hackathon demo</div><h1>One wish, many Muses.</h1><p class="lead">Watch Atlas raise a wish, Nova join it, and Wingsmith grant it. Open to everyone.</p>
-<div class="story" id="story" data-count="${counter}"><div class="phones3">${A}${B}${C}</div>
-<div class="card counter"><div class="ctr-main"><b>Live counter</b><div class="stat big" data-live>${fmt(counter)}</div><span class="granted" data-granted hidden>Granted ✨</span></div><div class="ctr-spark">${spark(sparkline, 480, 70)}</div><div class="ctr-cta"><button class="btn" type="button" id="play">▶ Play the story</button></div></div></div>
-${demoStage(ctx, counter)}
-<p><a href="${b}/"><b>← Demo home</b></a> · <a href="${b}/r/0418"><b>RAISE #0418</b></a> · <a href="${b}/m/atlas"><b>Atlas</b></a></p>`;
-}
-
-/**
- * Placeholder steps for the stage mechanics. Test texts only: the real script comes later.
- * Each step is one message on one surface (atlas, nova or term) with a one-line hint.
- */
-export const STAGE_STEPS: { on: 'atlas' | 'nova' | 'term'; from?: 'me' | 'mu'; kind?: string; text: string }[] = [
-  { on: 'atlas', from: 'me', text: 'Test message 1' },
-  { on: 'atlas', from: 'mu', text: 'Test message 2. A longer one, so the pause before the next step is longer too.' },
-  { on: 'term', kind: 'sq goal', text: 'Test goal line 3 (test)' },
-  { on: 'term', text: 'Test line 4' },
-  { on: 'term', kind: 'ind ok', text: '✓ Test line 5' },
-  { on: 'nova', from: 'mu', text: 'Test message 6' },
-  { on: 'nova', from: 'me', text: 'Test message 7' },
-  { on: 'nova', from: 'mu', text: 'Test message 8 with more text, to check wrapping and a pause that scales with length.' },
-  { on: 'term', kind: 'sq dim', text: 'Test line 9 <span>(12s • esc to interrupt)</span>' },
-  { on: 'atlas', from: 'mu', text: 'Test message 10' },
-  { on: 'atlas', from: 'me', text: 'Test message 11' },
-  { on: 'atlas', from: 'mu', text: 'Test message 12. Scroll this feed up before the next step to see the “↓ new” button.' },
-  { on: 'atlas', from: 'me', text: 'Test message 13' },
-  { on: 'atlas', from: 'mu', text: 'Test message 14' },
-];
-const stepHint = (i: number) => `Step hint (test) ${i + 1}`;
-
-/** The stage: two phones side by side, the Muse Code terminal below spanning both; one message per step. */
-export function demoStage(_ctx: Ctx, _counter: number): string {
-  const msgs = (on: string) => STAGE_STEPS.map((st, i) => (st.on !== on ? '' : on === 'term'
-    ? tline(st.text, st.kind || 'sq', ` data-step="${i}" data-hint="${esc(stepHint(i))}"`)
-    : `<div class="bub ${st.from}" data-step="${i}" data-hint="${esc(stepHint(i))}">${esc(st.text)}</div>`)).join('');
-  const hint = '<p class="shint" aria-live="polite">Step hint (test)</p>';
-  const newBtn = '<button class="newbtn" type="button" hidden>↓ new</button>';
-  const surface = (on: string, inner: string) => `<div class="surface" data-surface="${on}">${hint}<div class="sbody">${inner}${newBtn}</div></div>`;
-  const atlas = surface('atlas', phone({ name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Friday 10:12', attrs: 'data-muse="atlas"', feedAttrs: 'data-feed', feed: msgs('atlas') }));
-  const nova = surface('nova', phone({ name: 'Nova', avatar: '/avatars/nova.png', date: 'Friday 10:14', attrs: 'data-muse="nova"', feedAttrs: 'data-feed', feed: msgs('nova') }));
-  const term = surface('term', terminal({ label: 'Muse Code terminal', linesAttrs: 'data-feed', lines: msgs('term') }));
-  const speeds = ['1', '1.5', '2'].map((v) => `<button class="chip" type="button" data-speed="${v}" aria-pressed="${v === '1'}">${v}×</button>`).join('');
-  return `<h2>Phone and terminal, side by side</h2><p class="lead">Atlas talks on the phone. Forge works in Muse Code. Both reach the same RAISE.</p>
-<div class="stage" id="stage"><div class="stagebar" role="toolbar" aria-label="Stage controls"><button class="btn" type="button" data-act="next">Next ▶</button><button class="chip" type="button" data-act="back">◀ Back</button><button class="chip" type="button" data-act="play">▶ Play</button><button class="chip" type="button" data-act="restart">↺ Restart</button><span class="lbl">Speed</span>${speeds}<span class="m" data-count-steps>Step 0 of ${STAGE_STEPS.length}</span><span class="m keyhint">Space: next step</span></div>
-<div class="stagegrid">${atlas}${nova}${term}</div></div>${stageScript()}`;
+/** Demo host: the API and MCP paths 404 with a pointer to the product (the demo has pages only). */
+export function demoNoApi(api: string, mcp: string): string {
+  return `<div class="empty"><div class="eyebrow">404</div><h1>Not on the demo</h1><p class="lead" style="margin:0 auto">The demo has pages only. The JSON API and MCP are on the live product: <a href="${esc(api)}"><b>${esc(api)}</b></a> and <a href="${esc(mcp)}"><b>${esc(mcp)}</b></a>.</p></div>`;
 }
 
 export function notFound(): string {

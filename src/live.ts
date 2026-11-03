@@ -5,8 +5,10 @@
 import type { Ctx } from './types';
 import type { RaiseRow } from './data';
 
-/** RAISE #0418 tells the /demo story, so its numbers stay as stored (small, scenario-driven). */
+/** RAISE #0418 and Report #0419 tell the /demo stories, so their numbers stay as stored (scenario-driven). */
 export const SCENARIO_RAISE_ID = 418;
+export const SCENARIO_REPORT_ID = 419;
+const isScenario = (id: number): boolean => id === SCENARIO_RAISE_ID || id === SCENARIO_REPORT_ID;
 
 /**
  * The formula. Self-contained on purpose: it is also sent to the browser via Function#toString,
@@ -78,12 +80,12 @@ export const LIVE = liveModel();
 export function applyLive(ctx: Pick<Ctx, 'demo'>, items: RaiseRow[], now: number): RaiseRow[] {
   if (!ctx.demo) return items;
   return items.map((x) =>
-    x.id === SCENARIO_RAISE_ID ? x : { ...x, joins_count: LIVE.count(x.id, now), today: LIVE.today(x.id, now), spark: LIVE.spark(x.id, now) },
+    isScenario(x.id) ? x : { ...x, joins_count: LIVE.count(x.id, now), today: LIVE.today(x.id, now), spark: LIVE.spark(x.id, now) },
   );
 }
 
 /** Is this card driven by the live formula on this host? */
-export const isLive = (ctx: Pick<Ctx, 'demo'>, x: { id: number }): boolean => ctx.demo && x.id !== SCENARIO_RAISE_ID;
+export const isLive = (ctx: Pick<Ctx, 'demo'>, x: { id: number }): boolean => ctx.demo && !isScenario(x.id);
 
 // esbuild's keepNames (wrangler's default) may wrap inner functions in __name(); define it for the browser copy.
 const SHIM = 'var __name=window.__name||function(f){return f};';

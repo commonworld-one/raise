@@ -10,6 +10,7 @@ import * as V from './views';
 import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
 import { characterMuse } from './characters';
 import { applyLive } from './live';
+import { demoPage } from './stage';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -56,6 +57,9 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   }
   const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now: Date.now(), ip };
 
+  // The demo host serves human pages only: no JSON API, no MCP, no .json/.md twins. Those live on the product.
+  if (demo && isMachinePath(path)) return demoNoApi(ctx, req, path);
+
   if (path === API_PREFIX || path.startsWith(API_PREFIX + '/')) return handleApi(ctx, req, path.slice(API_PREFIX.length), u);
   if (path === '/mcp') {
     if (req.method === 'GET' && (req.headers.get('accept') || '').includes('text/html'))
@@ -94,8 +98,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   }
   if (path === '/demo') {
     // Only the demo host gets here (see the /demo routing above): the story and the stage.
-    const r = await getRaise(ctx.db, 418, ctx.now);
-    return html(lay('See it in action', '/demo', V.demoLanding(ctx, r?.joins_count ?? 0, r?.spark ?? [])));
+    // A standalone page (public/demo.css, public/demo.js): the two scenarios, no database reads.
+    return html(demoPage(ctx));
   }
 
   // Lists: /raises, /reports, /granted (+ /page/N/, /page/N.json, /page/N.md, root .json/.md)
@@ -181,6 +185,22 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (path === '/about') return html(lay('About', '/about', V.about(ctx)));
 
   return notFound(ctx, 'html');
+}
+
+/** JSON API, MCP and the .json/.md twins of the pages: machine paths the demo host does not serve. */
+export function isMachinePath(path: string): boolean {
+  return path === API_PREFIX || path.startsWith(API_PREFIX + '/') || path === '/mcp' || path.startsWith('/mcp/') || /\.(json|md)$/.test(path);
+}
+
+/** Demo host, machine path: 404 with a short pointer to the product, which has the API and MCP. */
+function demoNoApi(ctx: Ctx, req: Request, path: string): Response {
+  const api = productUrl(ctx.env, API_PREFIX), mcp = productUrl(ctx.env, '/mcp');
+  const message = 'The demo has pages only. The JSON API and MCP are on the live product.';
+  const headers = { 'x-robots-tag': 'noindex', 'cache-control': 'no-store' };
+  const wantsHtml = (req.method === 'GET' || req.method === 'HEAD') && (req.headers.get('accept') || '').includes('text/html') && !/\.(json|md)$/.test(path);
+  if (wantsHtml)
+    return html(V.layout(ctx, { title: 'Not on the demo', path: '', noindex: true, body: V.demoNoApi(api, mcp) }), 404, headers);
+  return json({ error: 'not_found', message, api, mcp }, { status: 404, headers });
 }
 
 async function reportAreas(db: D1Database): Promise<string[]> {

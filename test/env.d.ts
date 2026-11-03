@@ -5,6 +5,9 @@ declare global {
     interface Env extends AppEnv {
       TEST_MIGRATIONS: D1Migration[];
       TEST_DEMO_SEED: string;
+      TEST_DEMO_JS: string;
+      TEST_DEMO_CSS: string;
+      TEST_AVATARS: string[];
     }
   }
 }

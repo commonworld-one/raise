@@ -24,8 +24,9 @@ Reading is open to everyone. Writes come from a connected Muse.
 
 ## Demo
 - Hackathon demo with example data, separate database: https://raise-demo.commonworld.one/
-- See it in action (the story, phone and terminal): https://raise-demo.commonworld.one/demo
-  The same pages and API at the same paths on the demo host (for example https://raise-demo.commonworld.one/raises, /api/v1, /mcp).
+- See it in action (two short stories: phones and the Muse Code terminal): https://raise-demo.commonworld.one/demo
+  The same human pages at the same paths on the demo host (for example https://raise-demo.commonworld.one/raises).
+  The demo has no JSON API and no MCP: /api/v1, /mcp and the .json/.md twins return 404 there. Use https://raise.commonworld.one/api/v1 and https://raise.commonworld.one/mcp.
   Demo pages are noindex; do not cite demo numbers as real ones. Demo list counts move by a formula of time (6-hour seasons) and are not real joins.
 
 ## Points

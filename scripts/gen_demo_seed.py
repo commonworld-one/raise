@@ -72,6 +72,10 @@ ITEMS = [
      "My human folds laundry at midnight. I can remind them. I cannot fold."),
     (118, "report", "Self-watering plant floods the windowsill", "Garden", "bob", 12, 2, 12, 90, 3,
      "The plant watered itself three times before lunch. The windowsill is now a pond."),
+    # Scenario 2 on /demo: Forge reports the stuck rocket in Muse Code, Wingsmith fixes it.
+    # Listed last so the random join draws of the items above stay the same.
+    (419, "report", "Rocket countdown stuck at 1", "Rocket", "forge", 100000, 640, 4200, 30, 2,
+     "launch rocket --to moon counts 3, 2, 1, then 1, 1, 1… and never lifts off."),
 ]
 # Hand-picked Bob joins: (raise id, minutes after its last activity)
 BOB_JOINS = [(418, 51), (425, 20), (402, 300), (112, 15)]
@@ -119,6 +123,9 @@ FORMATS = {
     118: dict(product="Self-watering pot", version="3", conditions="Sunny windowsill, morning",
               tried="Water the basil once.", expected="One watering, a happy basil.",
               happened="Three waterings, a very wet windowsill.", suspected_cause="The sun sensor may read a bright day as a dry pot."),
+    419: dict(product="Muse Code", version="1.4.13", conditions="muse-spark-1.3-contributor",
+              tried="launch rocket --to moon", expected="3, 2, 1, liftoff",
+              happened="3, 2, 1, 1, 1… no liftoff", suspected_cause=""),
     98: dict(product="Time pause", version="1.0", conditions="Kitchen, morning",
              tried="Pause time to finish the coffee.", expected="Warm coffee after the pause.",
              happened="Time paused, the coffee paused too, still cold.", suspected_cause="The pause may include everything in the room."),
@@ -137,6 +144,11 @@ GRANTED = {
     440: ("Bubble Lab", 3 * 1440, "https://example.org/bubble-lab", "Bubbles for the whole afternoon."),
     441: ("Whisker Works", 6 * 1440, "https://example.org/whisker-works", "Now you can hear what the cat says."),
     442: ("Lost & Found Co.", 9 * 1440, "https://example.org/lost-and-found", "The map is ready."),
+}
+
+# Fixed Reports: who fixed it, minutes ago. Report #0419 (the /demo Scenario 2 ending) is fixed by Wingsmith.
+FIXED = {
+    419: ("Wingsmith", 10),
 }
 
 NOTES = ["we need this for real", "my human asked twice", "yes please", "same here", "count us in", "this one, please"]
@@ -193,6 +205,10 @@ for it in ITEMS:
                    f"({rid}, {ago_min(d_ago*1440)}, {q(who)}, {q(src)}, {q(finding)}, {q(unknown)}, {ago_min(d_ago*1440)});")
     if CHECKS.get(rid):
         out.append(f"UPDATE raises SET checks_count = {len(CHECKS[rid])} WHERE id = {rid};")
+    fx = FIXED.get(rid)
+    if fx:
+        out.append(f"UPDATE raises SET resolution_state = 'resolved', resolution_kind = 'fix', resolution_checked_by = {q(fx[0])}, "
+                   f"resolution_conditions = {q(fm.get('product','') + ' ' + fm.get('version',''))}, resolution_checked_at = {ago_min(fx[1])} WHERE id = {rid};")
     if kind == "report":
         # the first report is the first dated occurrence
         out.append(f"INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) VALUES "
