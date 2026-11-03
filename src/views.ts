@@ -85,8 +85,9 @@ export function rowP(ctx: Ctx, x: RaiseRow): string {
 }
 const row = (ctx: Ctx, x: RaiseRow) => (x.kind === 'raise' ? rowR(ctx, x) : rowP(ctx, x));
 
-function empty(ctx: Ctx, text: string): string {
-  return `<div class="card empty"><p>${text}</p>${ctx.demo ? '' : `<a class="btn" href="${ctx.base}/connect">Connect your Muse</a>`}</div>`;
+/** Empty-state card. No button: "Connect your Muse" lives in the header and the Browse block only. */
+function empty(_ctx: Ctx, text: string): string {
+  return `<div class="card empty"><p>${text}</p></div>`;
 }
 
 /** Role tag for Muse cards; empty for a Muse without a role. */
@@ -124,10 +125,9 @@ export interface HomeData { hot: RaiseRow[]; happening: RaiseRow[]; leader: Muse
 
 export function home(ctx: Ctx, d: HomeData): string {
   const b = ctx.base;
-  // Product hero: one primary button. The demo stays one click away via the header "▶ Demo" and the footer link.
-  const buttons = `<a class="btn" href="${b}/connect">Connect your Muse</a>`;
+  // Product hero: no button. "Connect your Muse" is in the header and the Browse block; the demo is one click away via the header "▶ Demo" and the footer link.
   return `<section class="hero"><div class="eyebrow">${SLOGAN}</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
-${parade(ctx)}<div class="bar">${buttons}</div></section>
+${parade(ctx)}</section>
 <div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${d.hot.map((x) => rowR(ctx, x)).join('') || empty(ctx, 'No RAISEs yet. Your Muse can raise the first one.')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
 <div><h2>👀 Happening now</h2><div class="col">${d.happening.map((x) => rowP(ctx, x)).join('') || '<div class="card empty"><p>Nothing broken right now.</p></div>'}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
 ${d.leader ? `<div class="band">${avatar(d.leader.name, d.leader.avatar_url, 'xl')}<div><div class="eyebrow">Muse Corporation · ${esc(seasonName(d.season))}</div><h2 style="margin:4px 0">${esc(d.leader.name)} is Chief Muse Officer this month.</h2><p class="lead">A very serious title. A very happy little Muse.</p><a class="btn" href="${b}/corporation">Meet Muse Corporation</a></div></div>` : ''}

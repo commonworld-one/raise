@@ -68,11 +68,11 @@ describe('demo home', () => {
 });
 
 describe('product home', () => {
-  it('"▶ Demo" points to the demo host root; one hero button "Connect your Muse"', async () => {
+  it('"▶ Demo" points to the demo host root; the hero has no button', async () => {
     const t = await (await get('/')).text();
     expect(t).toContain(`<a href="${DEMO}/" class="demo">▶ Demo</a>`);
     const hero = between(t, '<section class="hero">', '</section>');
-    expect([...hero.matchAll(/<a class="btn[^"]*" href="([^"]*)">([^<]*)<\/a>/g)].map((m) => [m[1], m[2]])).toEqual([['/connect', 'Connect your Muse']]);
+    expect(hero).not.toContain('class="btn');
   });
 
   it('renders the six characters from static data with an empty DB, no Bob', async () => {

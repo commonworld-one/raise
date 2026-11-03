@@ -1,6 +1,7 @@
 // Data access. Every function takes the D1 database explicitly, so the same
 // code serves raise-prod (real site) and raise-demo (raise-demo.commonworld.one).
 import type { Active, Kind, Sort } from './types';
+import { CHARACTERS, characterMuse, type Character } from './characters';
 import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
 
 export interface MuseRow {
@@ -142,6 +143,24 @@ export async function getVerifications(db: D1Database, raiseId: number): Promise
 }
 
 export interface MuseListParams { sort?: 'season' | 'all' | 'new'; client?: string; rank?: string; q?: string; page?: number; perPage?: number }
+
+/** Same filters as the SQL in listMuses, applied to a static character (0 points). */
+function characterMatches(c: Character, p: MuseListParams): boolean {
+  if (p.client && c.client !== p.client) return false;
+  const rr = p.rank ? rankRange(p.rank) : null;
+  if (rr && !(0 >= rr[0] && 0 <= rr[1])) return false;
+  if (p.q) {
+    const q = p.q.toLowerCase();
+    if (!c.name.toLowerCase().includes(q) && !c.tagline.toLowerCase().includes(q)) return false;
+  }
+  return true;
+}
+
+/**
+ * Muses for /muses and /api/v1/muses. Database rows first, in the chosen order; then the seven
+ * characters (src/characters.ts) that have no row yet, with 0 points, so the empty product still
+ * lists them. A row with a character's slug wins over the static entry.
+ */
 export async function listMuses(db: D1Database, p: MuseListParams, now: number): Promise<Page<MuseRow>> {
   const where: string[] = ['1 = 1'];
   const args: unknown[] = [];
@@ -153,15 +172,26 @@ export async function listMuses(db: D1Database, p: MuseListParams, now: number):
   const order = { season: 'season_points DESC, m.points_all DESC', all: 'm.points_all DESC', new: 'm.created_at DESC' }[p.sort || 'season'];
   const perPage = p.perPage || PER_PAGE;
   const page = Math.max(1, p.page || 1);
-  const [rows, cnt] = await db.batch<any>([
+  const offset = (page - 1) * perPage;
+  const slugs = CHARACTERS.map((c) => c.slug);
+  const [rows, cnt, have] = await db.batch<any>([
     db.prepare(`SELECT m.*, COALESCE(mp.points, 0) AS season_points FROM muses m
       LEFT JOIN muse_points mp ON mp.muse_id = m.id AND mp.season = ?
-      WHERE ${w} ORDER BY ${order}, m.id LIMIT ? OFFSET ?`).bind(seasonOf(now), ...args, perPage, (page - 1) * perPage),
+      WHERE ${w} ORDER BY ${order}, m.id LIMIT ? OFFSET ?`).bind(seasonOf(now), ...args, perPage, offset),
     db.prepare(`SELECT COUNT(*) AS n FROM muses m WHERE ${w}`).bind(...args),
+    db.prepare(`SELECT slug FROM muses WHERE slug IN (${slugs.map(() => '?').join(', ')})`).bind(...slugs),
   ]);
-  const total = (cnt!.results[0] as { n: number }).n;
+  const dbTotal = (cnt!.results[0] as { n: number }).n;
+  const taken = new Set((have!.results as { slug: string }[]).map((r) => r.slug));
+  const extra = CHARACTERS.filter((c) => !taken.has(c.slug) && characterMatches(c, p)).map((c) => characterMuse(c.slug)!);
+  const items = [...(rows!.results as MuseRow[])];
+  if (items.length < perPage) {
+    const start = Math.max(0, offset - dbTotal);
+    items.push(...extra.slice(start, start + perPage - items.length));
+  }
+  const total = dbTotal + extra.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
-  return { items: rows!.results as MuseRow[], total, page, perPage, pages, hasMore: page < pages };
+  return { items, total, page, perPage, pages, hasMore: page < pages };
 }
 
 export async function getMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {

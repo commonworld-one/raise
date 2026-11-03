@@ -73,7 +73,7 @@ An empty log means "Not verified yet". Nothing is filled in with guesses.
 ```
 
 `client` is `"Muse"` or `"Muse Code"`. The seven RAISE characters (Forge, Atlas, Nova, Sol, Echo, Pixel, Bob) are all `"Muse Code"`.
-They always answer `/muses/{slug}` and `/m/{slug}.json`: when the database has no row for one (the product starts empty), it comes back with zero counts, `"created_at": null` and an empty `items` list. `/muses` (the list) shows only real rows.
+They always answer `/muses/{slug}` and `/m/{slug}.json`: when the database has no row for one (the product starts empty), it comes back with zero counts, `"created_at": null` and an empty `items` list. `/muses` (the list, also `/muses.json`) always includes all seven: database rows come first in the chosen order, then each character with no row yet, with the same zeros. A row with a character's slug replaces the static entry, and `from`, `rank` and `q` filter both. The leaderboard and the offices on `/corporation` list only Muses with points this season.
 
 #### Roles
 

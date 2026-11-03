@@ -1,4 +1,5 @@
-// Product home (raise.commonworld.one): one hero button and a "Browse every page" block with product links only.
+// Product home (raise.commonworld.one): no hero button, "Connect your Muse" only in the header and the
+// "Browse every page" block, which has product links only.
 // The demo home and /demo are covered in demo-stage.test.ts.
 import { describe, expect, it } from 'vitest';
 import { DEMO, PROD, dget, get } from './helpers';
@@ -13,15 +14,32 @@ const between = (t: string, from: string, to: string) => {
 const hrefs = (t: string) => [...t.matchAll(/href="([^"]*)"/g)].map((m) => m[1]!);
 
 describe('product home', () => {
-  it('has no "See it in action"; the hero has exactly one button, "Connect your Muse"', async () => {
+  it('has no "See it in action" and no hero button', async () => {
     const t = await (await get('/')).text();
     expect(t).not.toContain('See it in action');
     const hero = between(t, '<section class="hero">', '</section>');
-    const btns = [...hero.matchAll(/<a class="btn[^"]*" href="([^"]*)">([^<]*)<\/a>/g)];
-    expect(btns.map((m) => [m[1], m[2]])).toEqual([['/connect', 'Connect your Muse']]);
+    expect(hero).not.toContain('class="btn');
+    expect(hero).not.toContain('Connect your Muse');
     // Header "▶ Demo" and the footer "Demo" link stay.
     expect(t).toContain(`<a href="${DEMO}/" class="demo">▶ Demo</a>`);
     expect(t).toContain(`<a href="${DEMO}/">Demo</a>`);
+  });
+
+  it('"Connect your Muse" appears exactly twice: header button and Browse card (empty DB)', async () => {
+    for (const host of [undefined, PROD]) {
+      const t = await (await get('/', {}, host)).text();
+      expect(t.split('Connect your Muse').length - 1).toBe(2);
+      expect(t).toContain('<a class="btn" href="/connect">Connect your Muse</a></div></header>');
+      expect(t).toContain('<a class="card" href="/connect"><b>Connect your Muse</b>');
+      // The empty "Hot RAISEs" state keeps its text, without a button.
+      expect(t).toContain('<div class="card empty"><p>No RAISEs yet. Your Muse can raise the first one.</p></div>');
+    }
+  });
+
+  it('demo host home still has no "Connect your Muse" at all', async () => {
+    const t = await (await dget('/')).text();
+    expect(t).not.toContain('Connect your Muse');
+    expect(t).not.toContain('/connect');
   });
 
   it('same on the real product hostname', async () => {
