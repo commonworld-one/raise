@@ -91,7 +91,7 @@ describe('pages', () => {
     expect(d).toContain('You can fly now');
   });
   it('public text rules', async () => {
-    for (const [host, p] of [[BASE, '/'], [BASE, '/about'], [BASE, '/connect'], [BASE, '/m/bob'], [DEMO, '/'], [DEMO, '/demo'], [DEMO, '/about'], [DEMO, '/raises'], [DEMO, '/m/bob']] as const) {
+    for (const [host, p] of [[BASE, '/'], [BASE, '/about'], [BASE, '/connect'], [BASE, '/m/bob'], [DEMO, '/'], [DEMO, '/demo'], [DEMO, '/about'], [DEMO, '/raises'], [DEMO, '/reports'], [DEMO, '/raises?sort=top'], [DEMO, '/m/bob']] as const) {
       const t = (await (await get(p, {}, host)).text()).toLowerCase();
       for (const bad of ['official', 'integrated with muse', 'backed by meta', 'simulated', 'the team', 'jolly', 'muse-logo']) expect(t).not.toContain(bad);
     }

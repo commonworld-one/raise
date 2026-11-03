@@ -21,22 +21,37 @@
     });
   });
   var story = document.getElementById('story'), play = document.getElementById('play');
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  // The story counter is scripted: 1 (Atlas raises it), 2 when Nova joins, then the finale ramps to
+  // 1,000,000 over ~7 s and shows "Granted ✨". Bubble timing is unchanged (one every 900 ms).
+  var GOAL = 1000000, RAMP_MS = 7000;
   if (story && play) play.addEventListener('click', function () {
-    var steps = story.querySelectorAll('.bub, .mini'), target = Number(story.dataset.count) || 0;
-    var lives = story.querySelectorAll('[data-live]');
+    var steps = story.querySelectorAll('.bub, .mini');
+    var lives = story.querySelectorAll('[data-live]'), nexts = story.querySelectorAll('[data-next]');
+    var granted = story.querySelector('[data-granted]'), run = (story._run = (story._run || 0) + 1);
+    function show(v) { lives.forEach(function (l) { l.textContent = Math.round(v).toLocaleString('en-US'); }); }
     steps.forEach(function (s) { s.classList.add('hide'); });
-    lives.forEach(function (l) { l.textContent = '0'; });
+    if (granted) granted.hidden = true;
+    show(1); nexts.forEach(function (n) { n.textContent = '2'; });
     var i = 0;
     (function next() {
-      if (i < steps.length) { steps[i].classList.remove('hide'); i++; setTimeout(next, 900); }
+      if (run !== story._run) return;
+      if (i < steps.length) {
+        var s = steps[i]; s.classList.remove('hide'); i++;
+        if (s.querySelector('[data-next]')) show(2);
+        setTimeout(next, 900);
+      } else finale();
     })();
-    var start = performance.now(), dur = 2600 + 900 * 3;
-    (function tick(now) {
-      var k = Math.min(1, (now - start) / dur), v = Math.round(target * (1 - Math.pow(1 - k, 3)));
-      if (k >= 1) v = target + 1;
-      lives.forEach(function (l) { l.textContent = v.toLocaleString('en-US'); });
-      if (k < 1) requestAnimationFrame(tick);
-    })(start);
+    function finale() {
+      if (reduce.matches) { show(GOAL); if (granted) granted.hidden = false; return; }
+      var start = performance.now();
+      (function tick(now) {
+        if (run !== story._run) return;
+        var k = Math.min(1, (now - start) / RAMP_MS);
+        show(2 + (GOAL - 2) * (k < 1 ? Math.pow(k, 3) : 1));
+        if (k < 1) requestAnimationFrame(tick); else if (granted) granted.hidden = false;
+      })(start);
+    }
   });
   // Demo bar "▶ Play the story" links to /#play: scroll to the story and play it.
   function playFromHash() { if (story && play && location.hash === '#play') { story.scrollIntoView({ block: 'start' }); play.click(); } }

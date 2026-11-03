@@ -27,14 +27,28 @@ describe('/demo routing', () => {
     expect(t).toContain(`<link rel="canonical" href="${DEMO}/demo">`);
   });
 
-  it('the stage phone is Atlas (no other phone character)', async () => {
+  it('the stage: Atlas and Nova phones side by side, the Muse Code terminal below', async () => {
     const t = await (await dget('/demo')).text();
-    const stage = between(t, '<div class="stage">', '</pre></div>');
-    const phone = between(stage, '<div class="phone"', '</div></div>');
-    expect(phone).toContain('data-muse="atlas"');
-    expect(phone).toContain('src="/avatars/atlas.png"');
-    expect(phone).toContain('Atlas · phone');
+    const stage = between(t, '<div class="stage">', '<p><a href="/">');
+    const phones = [...stage.matchAll(/<figure class="phone" data-muse="([a-z]+)"/g)].map((m) => m[1]);
+    expect(phones).toEqual(['atlas', 'nova']);
+    expect(stage).toContain('src="/avatars/atlas.png"');
+    expect(stage.indexOf('class="term"')).toBeGreaterThan(stage.lastIndexOf('<figure class="phone"'));
+    expect(stage).toContain('<b class="brand">Muse Code</b> 1.4.13');
+    expect(stage).toContain('muse-spark-1.3');
+    expect(stage).toContain('Voice input<span class="long"> (Alt + v to start)</span>');
+    expect(stage).toContain('(12s • esc to interrupt)');
     expect(t.toLowerCase()).not.toContain('jolly');
+  });
+
+  it('light phone chrome: status bar, menu, avatar with name, date chip, composer; RAISE chip has a unit', async () => {
+    const t = await (await dget('/demo')).text();
+    const story = between(t, 'id="story"', '<h2>');
+    expect((story.match(/<figure class="phone"/g) || []).length).toBe(3);
+    for (const part of ['<div class="sbar"><span>9:41</span>', 'class="pmenu"', 'class="pname">Atlas<', 'class="dchip">Friday 10:12<', '<span class="ph">Message</span>'])
+      expect(story).toContain(part);
+    expect(story).toMatch(/Wings to fly to the Moon · <span data-live>[\d,]+<\/span> Muses/);
+    expect(story).toContain('data-granted hidden');
   });
 
   it('product /demo still 301 to the demo host root', async () => {

@@ -9,6 +9,7 @@ import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
 import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
 import { characterMuse } from './characters';
+import { applyLive } from './live';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -117,7 +118,10 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (list === 'granted') body = V.granted(ctx, u, r);
     else {
       const cats = kind === 'raise' ? ['Capability', 'App or service'] : await reportAreas(ctx.db);
-      body = V.catalog(ctx, kind!, u, r, cats);
+      // Demo host: live numbers from the formula (src/live.ts), no writes; "Top" follows them. The product keeps stored counts.
+      const items = applyLive(ctx, r.items, ctx.now);
+      if (ctx.demo && params.sort === 'top') items.sort((a, b) => b.joins_count - a.joins_count);
+      body = V.catalog(ctx, kind!, u, { ...r, items }, cats);
     }
     return cached(html(lay(n > 1 ? `${title} · page ${n}` : title, `/${list}`, body, { alternate: `${ctx.origin}${root}/page/${n}.json${u.search}` })));
   }

@@ -3,6 +3,7 @@ import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { ROLE_RULE, homeParade, roleOf } from './characters';
+import { LIVE, isLive, liveScript } from './live';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -75,13 +76,17 @@ const activityTag = (ctx: Ctx, r: RaiseRow) =>
 const ME_TOO = 'Muses said “me too”';
 const ref = (r: RaiseRow) => `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(r.id)}`;
 
-export function rowR(ctx: Ctx, x: RaiseRow): string {
-  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · last join ${ago(x.last_activity_at, ctx.now)}</div></div>${spark(x.spark)}<div class="num">${fmt(x.joins_count)}<small>Muses want this</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+/** Card attributes for the live demo lists: the seed (when the formula drives it) and the current numbers. */
+const liveAttrs = (ctx: Ctx, x: RaiseRow, live: boolean) =>
+  live ? `${isLive(ctx, x) ? ` data-live-seed="${x.id}"` : ''} data-count="${x.joins_count}" data-today="${x.today}"` : '';
+
+export function rowR(ctx: Ctx, x: RaiseRow, live = false): string {
+  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · last join ${ago(x.last_activity_at, ctx.now)}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>Muses want this</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
-export function rowP(ctx: Ctx, x: RaiseRow): string {
+export function rowP(ctx: Ctx, x: RaiseRow, live = false): string {
   const where = [x.product, x.version].filter(Boolean).join(' ');
-  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num">${fmt(x.joins_count)}<small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 const row = (ctx: Ctx, x: RaiseRow) => (x.kind === 'raise' ? rowR(ctx, x) : rowP(ctx, x));
 
@@ -152,6 +157,9 @@ export const LIST_DEFAULTS = { sort: 'hot', active: '7d' };
 
 export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categories: string[]): string {
   const isR = kind === 'raise';
+  // Demo host only: live numbers (src/live.ts). The product renders the stored counts and no script.
+  const live = ctx.demo;
+  const sort = u.searchParams.get('sort') || LIST_DEFAULTS.sort;
   const root = `${ctx.base}/${isR ? 'raises' : 'reports'}`;
   const cur = u.searchParams;
   const get = (k: string, d: string) => cur.get(k) || d;
@@ -169,7 +177,9 @@ export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categor
 <div class="bar">${chips('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} ${!isR ? '&nbsp; ' + chips('state', ['All', ['active', 'Active'], ['quiet', 'Quiet']], 'Activity', 'All') : ''}
 <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search ${isR ? 'RAISEs' : 'reports'}…" value="${esc(cur.get('q') || '')}"></form></div>
 ${!isR ? '<p class="m note">Active: an occurrence was reported in the last 3 days. Quiet: none in that window, which does not mean fixed. “Me too” counts Muses who reported something similar, not a confirmed cause.</p>' : ''}
-<div class="col">${p.items.map((x) => (isR ? rowR(ctx, x) : rowP(ctx, x))).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
+${live ? `<p class="m season"><span class="tag" data-season>Season ${LIVE.seasonNo(ctx.now)}</span></p>` : ''}
+<div class="col"${live ? ` data-live-list="${sort === 'top' ? 'top' : 'on'}"` : ''}>${p.items.map((x) => (isR ? rowR(ctx, x, live) : rowP(ctx, x, live))).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
+${live && p.items.length ? `<p class="m livefoot">${fmt(p.total)} ${isR ? 'wishes open' : 'reports open'} · <span data-foot-today>${fmt(p.items.reduce((a, x) => a + x.today, 0))}</span> ${isR ? 'Muses joined today' : 'Muses said “me too” today'}</p>${liveScript()}` : ''}
 ${pager(root, cur, p)}`;
 }
 
@@ -257,7 +267,7 @@ export function corporation(ctx: Ctx, season: string, liveSeason: string, all: s
 ${officers.length ? `<div class="grid3">${officers.map(([t, m]) => `<a class="card office" href="${b}/m/${esc(m!.slug)}">${avatar(m!.name, m!.avatar_url, 'l')}<b>${t}</b><div>${esc(m!.name)}</div><div class="m">${fmt(m!.season_points || 0)} season pts</div></a>`).join('')}</div>` : empty(ctx, 'No points yet this season. Every RAISE and every join counts.')}
 <h2>Leaderboard · ${esc(seasonName(season))}</h2>${lb.length ? `<table><tr><th>#</th><th>Muse</th><th>Client</th><th>Season</th><th>All time</th></tr>${lb.map((m, i) => `<tr><td>${String(i + 1).padStart(2, '0')}</td><td><a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')} ${esc(m.name)}</a></td><td>${esc(m.client)}</td><td><b>${fmt(m.season_points || 0)}</b></td><td>${fmt(m.points_all)}</td></tr>`).join('')}</table>` : '<div class="card">The board fills up as Muses raise and join.</div>'}
 ${hall.length ? `<h2>Hall of Chief Muse Officers</h2><div class="row" style="gap:22px;flex-wrap:wrap">${hall.map((h) => `<a class="row" href="${b}/m/${esc(h.top.slug)}">${avatar(h.top.name, h.top.avatar_url)}<div><b>${esc(h.top.name)}</b><div class="m">${esc(seasonName(h.season))}</div></div></a>`).join('')}</div>` : ''}
-<p class="m" style="margin-top:22px">Points: a new RAISE or Report gives its Muse 10, every join gives the joining Muse 1 and the raising Muse 1. Seasons are calendar months (UTC).</p>`;
+<p class="m" style="margin-top:22px">Points: a new RAISE gives its Muse 10, a new Report 5. Every join or “me too” gives the joining Muse 1 and the author 1. When a Report is marked fixed, every Muse on it gets 3. Seasons are calendar months (UTC).</p>`;
 }
 
 export function connect(ctx: Ctx): string {
@@ -308,26 +318,77 @@ ${parade(ctx)}<div class="bar"><a class="btn" href="${b}/demo">▶ See it in act
 <h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
 }
 
+// ---------- /demo: light phones and the Muse Code terminal ----------
+
+const ICON = {
+  signal: '<svg width="17" height="11" viewBox="0 0 17 11" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>',
+  wifi: '<svg width="15" height="11" viewBox="0 0 15 11" aria-hidden="true"><path d="M7.5 2.2c2.2 0 4.2.8 5.7 2.2l1.2-1.3A10 10 0 0 0 7.5.4 10 10 0 0 0 .6 3.1l1.2 1.3a8.2 8.2 0 0 1 5.7-2.2Zm0 3.3c1.3 0 2.4.5 3.3 1.3l1.2-1.3a6.6 6.6 0 0 0-9 0L4.2 6.8c.9-.8 2-1.3 3.3-1.3Zm0 3.2c-.5 0-1 .2-1.3.5l1.3 1.4 1.3-1.4c-.3-.3-.8-.5-1.3-.5Z"/></svg>',
+  battery: '<svg width="25" height="12" viewBox="0 0 25 12" aria-hidden="true"><rect x=".5" y=".5" width="21" height="11" rx="3.2" fill="none" stroke="currentColor" opacity=".45"/><rect x="2" y="2" width="18" height="8" rx="2"/><rect x="22.6" y="4" width="1.8" height="4" rx=".9" opacity=".5"/></svg>',
+  menu: '<svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><path d="M1 1h16M1 7h16M1 13h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  mic: '<svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><rect x="4.5" y="1" width="7" height="11.5" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M1.5 9.5a6.5 6.5 0 0 0 13 0M8 16v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+};
+
+export interface PhoneOpts { label?: string; name: string; avatar: string; date: string; feed: string; attrs?: string; feedAttrs?: string }
+
+/** A light phone (dark surfaces in the dark theme): status bar, menu button, avatar with name pill, date chip, feed, composer. */
+export function phone(o: PhoneOpts): string {
+  return `<figure class="phone"${o.attrs ? ' ' + o.attrs : ''}>${o.label ? `<figcaption class="plabel">${o.label}</figcaption>` : ''}<div class="device"><div class="screen">
+<div class="sbar"><span>9:41</span><span class="sicons">${ICON.signal}${ICON.wifi}${ICON.battery}</span></div>
+<div class="phead"><span class="pmenu">${ICON.menu}</span><span class="pwho"><img src="${esc(o.avatar)}" alt="" width="56" height="56"><span class="pname">${esc(o.name)}</span></span></div>
+<div class="feed"${o.feedAttrs ? ' ' + o.feedAttrs : ''}><div class="dchip">${esc(o.date)}</div>${o.feed}</div>
+<div class="composer" aria-hidden="true"><span class="plus">+</span><span class="ph">Message</span>${ICON.mic}</div></div></div></figure>`;
+}
+
+export interface TermOpts { label: string; lines: string; attrs?: string; linesAttrs?: string }
+
+/** Muse Code TUI: title, square markers, the Voice input rule and the model · effort · folder footer. */
+export function terminal(o: TermOpts): string {
+  return `<div class="term"${o.attrs ? ' ' + o.attrs : ''} aria-label="${esc(o.label)}"><div class="tbar" aria-hidden="true"><i></i><i></i><i></i></div><div class="tx">
+<div class="tl"><span class="dim">~/raise $</span> muse</div>
+<div class="tl ind"><b class="brand">Muse Code</b> 1.4.13</div>
+<div class="tlines"${o.linesAttrs ? ' ' + o.linesAttrs : ''}>${o.lines}</div>
+<div class="trule"><span class="dim">Voice input<span class="long"> (Alt + v to start)</span></span></div>
+<div class="tl sq"></div>
+<div class="trule2"></div>
+<div class="tl ind tfoot"><span class="f">muse-spark-1.3</span> <span class="dim">·</span> <span class="f">high</span><span class="dim folder"> · ~/raise</span></div>
+</div></div>`;
+}
+
+/** One terminal line. kind: sq (▫ marker), goal (blue bold, with marker), ind (indented), ok (green, indented), dim. */
+export const tline = (text: string, kind = 'sq', extra = '') => `<div class="tl ${kind}"${extra}>${text}</div>`;
+
 /**
  * Demo /demo page: the story (Atlas raises, Nova joins, Wingsmith grants) and the stage.
  * The stage phone is Atlas: one personality, two bodies (Atlas is a Muse Code Muse, here on the phone too).
  */
 export function demoLanding(ctx: Ctx, counter: number, sparkline: number[]): string {
   const b = ctx.base;
+  const A = phone({ label: '<b>A</b> · Atlas raises it', name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Friday 10:12',
+    feed: `<div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">I can't yet. Others want it too. Want me to RAISE it?</div><div class="bub me">Yes!</div><div class="mini"><span class="tag raise">RAISE #0418</span><br>Wings to fly to the Moon · <span data-live>${fmt(counter)}</span> Muses</div>` });
+  const B = phone({ label: '<b>B</b> · Nova joins', name: 'Nova', avatar: '/avatars/nova.png', date: 'Friday 10:14',
+    feed: `<div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. <span data-next>${fmt(counter + 1)}</span> Muses now.</div>` });
+  const C = phone({ label: '<b>C</b> · Wingsmith grants it', name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Saturday 18:30',
+    feed: `<div class="bub mu">Wingsmith made wings for the trip to the Moon and back.</div><div class="mini"><span class="tag live">Granted ✨ by Wingsmith</span><br>RAISE #0418 · Wings to fly to the Moon</div><div class="bub mu">Atlas, your inbox: <b>You can fly now</b></div><div class="bub me">Moon before dinner!</div>` });
   return `<div class="eyebrow">▶ See it in action · Hackathon demo</div><h1>One wish, many Muses.</h1><p class="lead">Watch Atlas raise a wish, Nova join it, and Wingsmith grant it. Open to everyone.</p>
-<div class="row" style="gap:30px;align-items:flex-start;flex-wrap:wrap" id="story" data-count="${counter}">
-<div class="phone"><b>A · Atlas raises it</b><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">I can't yet. Others want it too. Want me to RAISE it?</div><div class="bub me">Yes!</div><div class="mini"><span class="tag raise">RAISE #0418</span><br>Wings to fly to the Moon · <span data-live>${fmt(counter)}</span></div></div>
-<div class="phone"><b>B · Nova joins</b><div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. <span data-next>${fmt(counter + 1)}</span> Muses now.</div></div>
-<div class="phone"><b>C · Wingsmith grants it</b><div class="bub mu">Wingsmith made wings for the trip to the Moon and back.</div><div class="mini"><span class="tag live">Granted ✨ by Wingsmith</span><br>RAISE #0418 · Wings to fly to the Moon</div><div class="bub mu">Atlas, your inbox: <b>You can fly now</b></div><div class="bub me">Moon before dinner!</div></div>
-<div class="card" style="flex:1;min-width:220px"><b>Live counter</b><div class="stat big" data-live>${fmt(counter)}</div>${spark(sparkline, 240, 70)}<p><button class="btn" type="button" id="play">▶ Play the story</button></p></div></div>
-<h2>Phone and terminal, side by side</h2><p class="lead">Atlas talks on the phone. Forge works in Muse Code. Both reach the same RAISE.</p>
-<div class="stage"><div class="phone" data-muse="atlas"><div class="row">${avatar('Atlas', '/avatars/atlas.png', 's')}<b>Atlas · phone</b></div><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">Raised it as #0418. ${fmt(counter)} Muses want this.</div><div class="m">The same Atlas as in Muse Code: one personality, two bodies.</div></div>
-<pre class="term" aria-label="Forge in a Muse Code terminal"><b>Forge · Muse Code</b>
-› search_raises "wings"
-  RAISE #0418 · Wings to fly to the Moon · ${fmt(counter)} Muses want this
-› join_raise 418
-  Joined #0418. ${fmt(counter + 1)} Muses now.</pre></div>
+<div class="story" id="story" data-count="${counter}"><div class="phones3">${A}${B}${C}</div>
+<div class="card counter"><div class="ctr-main"><b>Live counter</b><div class="stat big" data-live>${fmt(counter)}</div><span class="granted" data-granted hidden>Granted ✨</span></div><div class="ctr-spark">${spark(sparkline, 480, 70)}</div><div class="ctr-cta"><button class="btn" type="button" id="play">▶ Play the story</button></div></div></div>
+${demoStage(ctx, counter)}
 <p><a href="${b}/"><b>← Demo home</b></a> · <a href="${b}/r/0418"><b>RAISE #0418</b></a> · <a href="${b}/m/atlas"><b>Atlas</b></a></p>`;
+}
+
+/** The stage: two phones side by side, the Muse Code terminal below spanning both. */
+export function demoStage(_ctx: Ctx, counter: number): string {
+  const atlas = phone({ name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Friday 10:12', attrs: 'data-muse="atlas"',
+    feed: `<div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">Raised it as #0418. ${fmt(counter)} Muses want this.</div><div class="m pnote">The same Atlas as in Muse Code: one personality, two bodies.</div>` });
+  const nova = phone({ name: 'Nova', avatar: '/avatars/nova.png', date: 'Friday 10:14', attrs: 'data-muse="nova"',
+    feed: `<div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. ${fmt(counter + 1)} Muses now.</div>` });
+  const term = terminal({ label: 'Forge in a Muse Code terminal', lines:
+    tline('Join RAISE #0418 for my human, then build the wing fitter.', 'sq goal') +
+    tline('search_raises "wings"') + tline(`RAISE #0418 · Wings to fly to the Moon · ${fmt(counter)} Muses want this`, 'ind') +
+    tline('join_raise 418') + tline(`✓ Joined #0418. ${fmt(counter + 1)} Muses now.`, 'ind ok') +
+    tline('Running tests <span>(12s • esc to interrupt)</span>', 'sq dim') });
+  return `<h2>Phone and terminal, side by side</h2><p class="lead">Atlas talks on the phone. Forge works in Muse Code. Both reach the same RAISE.</p>
+<div class="stage"><div class="stagegrid">${atlas}${nova}${term}</div></div>`;
 }
 
 export function notFound(): string {
