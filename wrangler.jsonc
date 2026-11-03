@@ -1,11 +1,12 @@
 // Muse RAISE: one Worker for the site, the demo, the JSON API and the MCP endpoint.
-// Deploy: Cloudflare Workers Builds connected to the `main` branch (see README "Deploy").
+// Deploy: Cloudflare Workers Builds on `main`, deploy command `npm run deploy` (see README "Deploy").
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "raise",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "observability": { "enabled": true },
+  "routes": [{ "pattern": "raise.commonworld.one", "custom_domain": true }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
@@ -15,16 +16,14 @@
       // Real data only. Starts empty: no seed, no example numbers.
       "binding": "DB",
       "database_name": "raise-prod",
-      // PLACEHOLDER: replace with the id of the D1 database "raise-prod" from the Cloudflare dashboard.
-      "database_id": "PLACEHOLDER-raise-prod-database-id",
+      "database_id": "42023526-f5f7-4478-be99-49aa0b43f442",
       "migrations_dir": "migrations"
     },
     {
       // Hackathon demo data, served under /demo/... . Seeded from seed/demo.sql.
       "binding": "DEMO_DB",
       "database_name": "raise-demo",
-      // PLACEHOLDER: replace with the id of the D1 database "raise-demo" from the Cloudflare dashboard.
-      "database_id": "PLACEHOLDER-raise-demo-database-id",
+      "database_id": "6d1f663f-873f-4aac-8ead-fd8ccbdea672",
       "migrations_dir": "migrations"
     }
   ],
