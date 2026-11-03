@@ -9,6 +9,8 @@ declare global {
       TEST_DEMO_CSS: string;
       TEST_AVATARS: string[];
       TEST_ICONS: { files: string[]; icoSizes: number[]; png32: number[]; apple: number[] };
+      TEST_OG: Record<string, number[]>;
+      TEST_STYLE_CSS: string;
     }
   }
 }

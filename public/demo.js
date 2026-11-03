@@ -17,6 +17,10 @@ function setTheme(t){root.setAttribute("data-theme",t);$("#theme").textContent=t
 function savedTheme(){try{return localStorage.getItem("raise-theme")}catch(e){return null}}
 setTheme(Q.get("theme")||savedTheme()||((window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light"));
 $("#theme").onclick=function(){var t=root.getAttribute("data-theme")==="dark"?"light":"dark";setTheme(t);try{localStorage.setItem("raise-theme",t)}catch(e){}this.blur()};
+/* site header: collapsible menu on narrow screens (app.js is not loaded here, so the one #theme is wired above only) */
+(function(){var nt=$("#navtoggle"),hd=nt&&nt.closest("header");if(nt&&hd)nt.onclick=function(){var o=hd.classList.toggle("open");nt.setAttribute("aria-expanded",o?"true":"false")}})();
+/* the visible top of the page: below the sticky site header (none while recording) */
+function topEdge(){var h=$("header.site");return h&&getComputedStyle(h).position==="sticky"&&getComputedStyle(h).display!=="none"?h.getBoundingClientRect().bottom:0}
 
 /* helpers (fx = {g: generation, s: scenario, instant}) */
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
@@ -137,7 +141,7 @@ function makeScn(c){
     keys.forEach(function(k){var e=$(c.devs[k]);var on=list.indexOf(k)>=0;e.classList.toggle("on",on);e.classList.toggle("dim",!on)});
     if(!REC&&fx&&!fx.instant&&d!=="all"){
       var k0=list[0],t=$(c.devs[k0]),r=t.getBoundingClientRect();
-      if(r.top<0||r.bottom>innerHeight)t.scrollIntoView({block:(k0==="counter"||k0==="final")?"center":"nearest",behavior:RM?"auto":"smooth"});
+      if(r.top<topEdge()||r.bottom>innerHeight)t.scrollIntoView({block:(k0==="counter"||k0==="final")?"center":"nearest",behavior:RM?"auto":"smooth"});
     }
   };
   s.phase=function(act,text){s.endAct=act;s.endText=text;s.ui()};
@@ -392,6 +396,8 @@ window.addEventListener("resize",function(){if(REC)fitRec();if($("#modal").class
 setKey(S1);
 if(REC){document.body.classList.add("rec");fitRec();recShow(1);S1.playing=true;S1.ui();S1.timer=setTimeout(S1.next,1200)}
 else if(location.hash==="#play"){S1.play()}
+/* "▶ Play the story" in the demo bar links to /demo#play: on this page it plays scenario 1 in place */
+window.addEventListener("hashchange",function(){if(!REC&&location.hash==="#play"){$("#scn1").scrollIntoView({block:"start",behavior:RM?"auto":"smooth"});setKey(S1);if(!S1.playing)S1.play()}});
 window.__demo={
   s1:{steps:S1.S.length,next:S1.next,back:S1.back,state:function(){return{cur:S1.cur,count:S1.count,busy:S1.busy,end:S1.endAct}}},
   s2:{steps:S2.S.length,next:S2.next,back:S2.back,state:function(){return{cur:S2.cur,count:S2.count,busy:S2.busy,end:S2.endAct}}},

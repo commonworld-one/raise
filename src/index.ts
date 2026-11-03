@@ -9,7 +9,7 @@ import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
 import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
 import { characterMuse } from './characters';
-import { applyLive } from './live';
+import { applyLive, cardWeek, isLive } from './live';
 import { demoPage } from './stage';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
@@ -164,7 +164,12 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (m[2] === '.md') return md(V.raiseMd(ctx, r, checks));
     if (m[1] !== pad(id)) return redirectTo(ctx, `${ctx.base}/r/${pad(id)}`);
     const joiners = await getJoiners(ctx.db, id);
-    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, r, joiners, checks), { description: r.body.slice(0, 160) || r.title }));
+    // Demo host: the card's numbers come from the same formula as its row in the lists (src/live.ts); the product keeps stored counts.
+    const card = isLive(ctx, r) ? { ...applyLive(ctx, [r], ctx.now)[0]!, week: cardWeek(id, ctx.now) } : r;
+    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, card, joiners, checks), {
+      description: r.body.slice(0, 160) || r.title,
+      share: { title: `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(id)} · ${r.title}`, type: 'article', ...(ctx.demo ? V.OG_STORY[id] : undefined) },
+    }));
   }
 
   if (path === '/corporation') {

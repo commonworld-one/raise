@@ -85,3 +85,10 @@ table{display:block;overflow-x:auto}}
 @media (max-width:420px){.parade{gap:6px}.parade .pn{font-size:12px}}
 /* live demo numbers */
 .season{margin:6px 0 10px}.livefoot{text-align:center;margin:18px 0 0}
+/* Demo host only: big live headline numbers (src/live.ts headlineBlock) on the home, /granted, /muses, /corporation */
+.headline{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:8px 0 34px}
+.headline .hl{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px 20px;text-align:center}
+.headline .hn{display:block;font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:clamp(30px,4.2vw,48px);letter-spacing:-1.5px;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.headline small{display:block;margin-top:4px;color:var(--mute);font-size:14px;font-weight:500}
+@media (max-width:420px){.headline{grid-template-columns:1fr 1fr;gap:10px}.headline .hl{padding:14px 10px}.headline .hn{font-size:21px;letter-spacing:-.5px}.headline small{font-size:12.5px}}
+.card .stat.seen{font-size:30px;margin-top:16px;font-variant-numeric:tabular-nums}.card .stat.big{font-variant-numeric:tabular-nums}

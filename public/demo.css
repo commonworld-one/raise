@@ -19,6 +19,33 @@ html,body{margin:0}
 body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--ink);background:var(--bg);padding:24px 16px 40px;transition:background .3s,color .3s}
 a{color:inherit}
 #frame{max-width:760px;margin:0 auto}
+/* Site header + demo bar: the same header as every other page (rules mirror public/style.css, scoped to header.site
+   with the product palette). Full width: negative margins cancel the body padding. Sticky like elsewhere. */
+header.site{--h-bg:#fcfcfcf2;--h-ink:#24292c;--h-mute:#72787d;--h-line:#e6e8eb;--h-surf:#f5f6f8;--h-card:#fff;--h-acc:#0866df;
+  display:flex;align-items:center;gap:26px;padding:0 28px;height:78px;margin:-24px -16px 22px;border-bottom:1px solid var(--h-line);background:var(--h-bg);color:var(--h-ink);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);position:sticky;top:0;z-index:5;font:16px/1.6 "DM Sans",system-ui,sans-serif}
+[data-theme=dark] header.site{--h-bg:#0e1215f0;--h-ink:#e9ecef;--h-mute:#9aa3ab;--h-line:#646f79;--h-surf:#161c21;--h-card:#141a1e;--h-acc:#4b95ff}
+header.site a{text-decoration:none;color:inherit}
+header.site .brand{font-family:Manrope,system-ui,sans-serif;font-weight:700;font-size:24px;letter-spacing:-1px;display:flex;align-items:center;gap:10px;white-space:nowrap}
+header.site .brand span{font-size:12px;letter-spacing:2px;border-left:1px solid var(--h-line);padding-left:12px;font-weight:800}
+header.site .menu{display:contents}header.site .navtoggle{display:none}
+header.site nav{display:flex;gap:4px;flex-wrap:wrap}header.site nav a{padding:7px 12px;border-radius:999px;color:var(--h-mute);font-weight:500;font-size:14px}header.site nav a:hover{color:var(--h-acc)}
+header.site nav a.on{background:var(--h-surf);color:var(--h-ink);font-weight:600}header.site nav a.demo{color:var(--h-acc);font-weight:600}
+header.site .sp{flex:1}header.site .cw{color:var(--h-mute);font-weight:500;font-size:14px;padding:4px 0 4px 22px;margin-left:-4px;line-height:20px;border-left:1px solid var(--h-line);white-space:nowrap}header.site .cw:hover{color:var(--h-acc)}
+header.site .theme{border:1px solid var(--h-line);background:var(--h-card);color:var(--h-ink);border-radius:999px;height:40px;padding:0 14px;cursor:pointer;font:600 13px "DM Sans",system-ui,sans-serif;white-space:nowrap}
+#frame .demobar{background:var(--solid);color:#fff;border-radius:12px;padding:8px 14px;margin:0 0 18px;font-weight:600;font-size:14px}#frame .demobar a{color:#fff;text-decoration:underline}
+html{scroll-padding-top:96px}
+@media (max-width:860px){
+  header.site{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}header.site .cw{display:none}
+  header.site .brand{flex:1}header.site .navtoggle{display:inline-flex;align-items:center;border:1px solid var(--h-line);background:var(--h-card);color:var(--h-ink);border-radius:999px;height:40px;padding:0 14px;font:600 13px "DM Sans",system-ui,sans-serif;cursor:pointer}
+  html:not(.js) header.site .navtoggle{display:none}
+  header.site .menu{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%}header.site .menu .sp{display:none}
+  .js header.site:not(.open) .menu{display:none}
+  header.site nav{flex-direction:column;gap:2px}header.site nav a{padding:10px 12px;font-size:15px}
+  html:not(.js) header.site nav{flex-direction:row;flex-wrap:nowrap;overflow-x:auto}html:not(.js) header.site nav a{white-space:nowrap}
+  header.site .menu .theme{align-self:flex-start}
+  html{scroll-padding-top:76px}
+}
+body.rec header.site,body.rec .demobar{display:none!important}
 header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 header.top h1{font-size:22px;margin:0;letter-spacing:-.01em}
 header.top h1 span{color:var(--mut);font-weight:500}
@@ -224,6 +251,7 @@ body.rec footer.harmed{display:none}
 
 @media (max-width:480px){
   body{padding:16px 10px 32px}
+  header.site{margin:-16px -10px 16px}
   header.top h1{font-size:18px}
   #frame .hint{white-space:normal}
   .phones{grid-template-columns:1fr}

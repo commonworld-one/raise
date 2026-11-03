@@ -16,7 +16,7 @@ describe('pages', () => {
       expect(t).not.toContain('Hackathon demo');
     });
   }
-  // /demo is a standalone page (the two scenarios, no site header or demo bar): see demo-page.test.ts.
+  // /demo is a standalone page (own CSS and script) with the same site header and demo bar: see demo-page.test.ts and share-header-headline.test.ts.
   for (const p of ['/', '/raises', '/reports', '/granted', '/muses', '/corporation', '/about', '/m/atlas', '/m/bob', '/r/0418', '/r/0112', '/r/0419']) {
     it(`demo host ${p} -> 200 with demo bar`, async () => {
       const r = await dget(p);

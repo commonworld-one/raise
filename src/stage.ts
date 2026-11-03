@@ -3,9 +3,12 @@
 // 18 steps, ending at 1,000,000 and "Granted ✨ by Wingsmith"). Scenario 2: Forge in Muse Code
 // (Report #0419, 15 steps, ending at 100,000 "me too" and "Fixed ✓ by Wingsmith").
 // A standalone page: its own stylesheet (public/demo.css) and script (public/demo.js), avatars as
-// static files in public/avatars/*.webp. No requests and no writes from the page.
+// static files in public/avatars/*.webp. No data requests and no writes from the page.
+// On top: the same site header as every other page (one theme toggle, #theme, driven by demo.js) and
+// the demo bar. ?rec=1 hides both for a clean recording.
 import type { Ctx } from './types';
 import { ICON_LINKS, esc } from './util';
+import { OG_DEFAULT, demoBar, siteHeader, socialMeta } from './views';
 
 /** Steps per scenario (public/demo.js holds the scripts): Atlas 12 + Nova 6, and Act 1 3 + Act 2 4 + Act 3 8. */
 export const SCENARIO_STEPS = { phones: 18, terminal: 15 } as const;
@@ -21,15 +24,18 @@ export function demoPage(ctx: Ctx): string {
 <meta name="description" content="Missing a feature? RAISE it! Two short stories: Atlas and Nova RAISE a wish, Forge files a report.">
 <meta name="robots" content="noindex">
 <link rel="canonical" href="${esc(ctx.origin)}/demo">
+${socialMeta(ctx, { title: 'Muse RAISE · Hackathon demo', description: 'Missing a feature? RAISE it! Two short stories: Atlas and Nova RAISE a wish, Forge files a report.', url: `${ctx.origin}/demo`, ...OG_DEFAULT, type: 'website' })}
 ${ICON_LINKS}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;650;700;800&display=swap">
 <link rel="stylesheet" href="/demo.css">
-<script>try{var t=new URLSearchParams(location.search).get('theme')||localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<script>document.documentElement.classList.add('js');try{var t=new URLSearchParams(location.search).get('theme')||localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>
+${siteHeader(ctx, '/demo', 'site')}
 <div id="frame">
+  ${demoBar(ctx)}
   <header class="top">
     <h1><a href="/">Muse RAISE</a> <span>· Hackathon demo</span></h1>
-    <button class="iconbtn" id="theme" title="Switch light / dark">☾ Dark</button>
   </header>
 
   <section class="agents" aria-labelledby="agents-h">

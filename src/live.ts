@@ -71,7 +71,23 @@ export function liveModel() {
     for (let i = 0; i < points; i++) out.push(count(seed, s + ((t - s) * i) / (points - 1)));
     return out;
   };
-  return { SEASON_MS, season, seasonNo, seasonStart, character, count, today, spark };
+  /**
+   * All-time count for a seed: every finished season's final count plus the current season's count.
+   * Never goes down: at a season boundary it gains the new season's starting count. Past seasons are memoized.
+   */
+  const memo: Record<string, number> = {};
+  const FIRST = Math.floor(SEASON_ONE / SEASON_MS);
+  const total = (seed: number, t: number): number => {
+    const n = season(t);
+    let past = 0;
+    for (let k = FIRST; k < n; k++) {
+      const key = seed + ':' + k;
+      if (memo[key] === undefined) memo[key] = count(seed, (k + 1) * SEASON_MS - 1);
+      past += memo[key]!;
+    }
+    return past + (n >= FIRST ? count(seed, t) : 0);
+  };
+  return { SEASON_MS, season, seasonNo, seasonStart, character, count, today, spark, total };
 }
 
 export const LIVE = liveModel();
@@ -121,4 +137,94 @@ function stop(){clearInterval(a);clearInterval(b);a=b=null}
 document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});
 tick();if(top)resort();if(!document.hidden)start();
 })((${liveModel.toString()})());</script>`;
+}
+
+// ---------- headline counters (demo host only) ----------
+/**
+ * Big site-wide numbers on the demo home, /granted, /muses and /corporation. Each one is
+ * base + floor(scale * sum of LIVE.total(seed, t)) over its own synthetic seeds (900000+, never card ids),
+ * so the same counter shows the same number on every page and never goes down (all-time totals).
+ */
+export interface Headline { label: string; base: number; seeds: number[]; scale: number }
+export const HEADLINES = {
+  joins: { label: 'Muses joined', base: 0, seeds: [900101, 900102, 900103, 900104, 900105, 900106], scale: 1 },
+  raises: { label: 'RAISEs posted', base: 1200, seeds: [900201], scale: 1 / 400 },
+  muses: { label: 'Muses', base: 5000, seeds: [900301], scale: 1 / 150 },
+  // Granted + Fixed includes the granted seed, so it is never below "Wishes granted".
+  resolved: { label: 'Granted ✨ + Fixed ✓', base: 40, seeds: [900501, 900401], scale: 1 / 8000 },
+  granted: { label: 'Wishes granted ✨', base: 25, seeds: [900501], scale: 1 / 8000 },
+  grantedJoins: { label: 'Muses behind them', base: 0, seeds: [900601, 900602], scale: 1 / 3 },
+  points: { label: 'Points earned', base: 0, seeds: [900701, 900702, 900703, 900704], scale: 2 },
+} satisfies Record<string, Headline>;
+export type HeadlineKey = keyof typeof HEADLINES;
+/** Which counters each demo page shows. */
+export const HEADLINE_PAGES: Record<'home' | 'granted' | 'muses' | 'corporation', HeadlineKey[]> = {
+  home: ['joins', 'raises', 'muses', 'resolved'],
+  granted: ['granted', 'grantedJoins'],
+  muses: ['muses', 'raises', 'joins', 'points'],
+  corporation: ['muses', 'points', 'joins'],
+};
+
+export function headlineValue(key: HeadlineKey, t: number): number {
+  const h: Headline = HEADLINES[key];
+  let sum = 0;
+  for (const s of h.seeds) sum += LIVE.total(s, t);
+  return h.base + Math.floor(h.scale * sum);
+}
+
+const num = (n: number) => n.toLocaleString('en-US');
+
+/**
+ * The counters block plus its inline script. Server-rendered at `now` (first paint, also without JS);
+ * the browser counts up from that value to the formula's value for its own clock, then ticks 4x a second.
+ * prefers-reduced-motion: set once to the current value, no animation, no ticking. Pauses in hidden tabs.
+ */
+export function headlineBlock(ctx: Pick<Ctx, 'demo'>, keys: HeadlineKey[], now: number): string {
+  if (!ctx.demo) return '';
+  const cells = keys.map((k) => `<div class="hl"><span class="hn" data-hl="${k}">${num(headlineValue(k, now))}</span><small>${HEADLINES[k].label}</small></div>`).join('');
+  const spec = JSON.stringify(Object.fromEntries(keys.map((k) => [k, { base: HEADLINES[k].base, seeds: HEADLINES[k].seeds, scale: HEADLINES[k].scale }])));
+  return `<section class="headline" data-headline aria-label="Live demo numbers">${cells}</section>
+<script>${SHIM}(function(M,H){
+var els=[].slice.call(document.querySelectorAll('[data-hl]'));if(!els.length)return;
+var f=function(n){return Math.floor(n).toLocaleString('en-US')};
+function val(k,t){var h=H[k],s=0;for(var i=0;i<h.seeds.length;i++)s+=M.total(h.seeds[i],t);return h.base+Math.floor(h.scale*s)}
+function set(t){els.forEach(function(el){el.textContent=f(val(el.getAttribute('data-hl'),t))})}
+if(matchMedia('(prefers-reduced-motion: reduce)').matches){set(Date.now());return}
+var from=els.map(function(el){return +el.textContent.replace(/[^0-9]/g,'')||0}),t0=performance.now(),D=900;
+function intro(){var p=Math.min(1,(performance.now()-t0)/D),e=1-Math.pow(1-p,3),t=Date.now();
+els.forEach(function(el,i){var v=val(el.getAttribute('data-hl'),t);el.textContent=f(v<from[i]?v:from[i]+(v-from[i])*e)});
+if(p<1)requestAnimationFrame(intro);else start()}
+var a=null;function start(){if(a||document.hidden)return;set(Date.now());a=setInterval(function(){set(Date.now())},250)}
+function stop(){clearInterval(a);a=null}
+document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});
+requestAnimationFrame(intro);
+})((${liveModel.toString()})(),${spec});</script>`;
+}
+
+// ---------- one card's page /r/NNNN (demo host only) ----------
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+/** Joined in the last 7 days: the all-time total's growth, so it is never below "today". */
+export const cardWeek = (id: number, t: number): number => LIVE.total(id, t) - LIVE.total(id, t - WEEK_MS);
+/** "Muses saw it": every card, scenario ones included. Grows with the card's own all-time joins plus its own view seed. */
+export const cardViews = (id: number, t: number): number => Math.floor(1.3 * LIVE.total(id, t) + 0.5 * LIVE.total(700000 + id, t));
+
+/**
+ * Ticks the big numbers on a card page. Live cards (the same formula as the lists, so the card and its row
+ * agree): joins, today, this week, the spark. Every demo card, the scenario ones too: "Muses saw it".
+ * prefers-reduced-motion: set once, no ticking. Pauses in hidden tabs.
+ */
+export function cardScript(id: number, live: boolean): string {
+  return `<script>${SHIM}(function(M,id,live){
+var box=document.querySelector('[data-live-card]');if(!box)return;
+var f=function(n){return Math.floor(n).toLocaleString('en-US')},W=7*24*3600*1000;
+var q=function(k){return box.querySelector('[data-c="'+k+'"]')};
+function pts(s,w,h){var mx=Math.max.apply(null,s.concat([1]));return s.map(function(v,i){return (i/(s.length-1)*w).toFixed(1)+','+(h-(v/mx)*(h-3)-1).toFixed(1)}).join(' ')}
+function set(t){var v=q('views');if(v)v.textContent=f(1.3*M.total(id,t)+0.5*M.total(700000+id,t));
+if(!live)return;var c=q('joins');if(c)c.textContent=f(M.count(id,t));var d=q('today');if(d)d.textContent=f(M.today(id,t));
+var w=q('week');if(w)w.textContent=f(M.total(id,t)-M.total(id,t-W));var p=box.querySelector('.spark polyline');if(p)p.setAttribute('points',pts(M.spark(id,t),380,90))}
+set(Date.now());if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+var a=null;function start(){if(a||document.hidden)return;set(Date.now());a=setInterval(function(){set(Date.now())},250)}
+function stop(){clearInterval(a);a=null}
+document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});start();
+})((${liveModel.toString()})(),${Number(id)},${live ? 'true' : 'false'});</script>`;
 }
