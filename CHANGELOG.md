@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- /demo copy: "Forge posts the bugs it hits on the site" (README and the Meet the agents block).
 - /demo lost the site's top menu. It now has the same header as every other page (brand, main nav with ▶ Demo, Commonworld ↗, Menu button on narrow screens, one theme toggle) and the demo bar, above the story title, Meet the agents and the two scenarios. The header markup is shared (`siteHeader` in `src/views.ts`); `public/demo.css` styles it with the product palette, and `public/demo.js` drives the single `#theme` toggle and the menu (the old second toggle in the story title is gone; `app.js` is not loaded on /demo). "▶ Play the story" on /demo itself plays scenario 1 in place. Hidden in `?rec=1`. Auto-scroll keeps the active device below the sticky header.
 - Link previews on X and other sites: every page on both hosts now carries Open Graph and X card tags (og:type, og:site_name, og:title, og:description, og:url, og:image 1200x630 PNG with width, height and alt; twitter:card summary_large_image, twitter:site @nerd27dk). Values are HTML-escaped and ASCII-only (non-ASCII as numeric entities). Card pages use "RAISE #NNNN · title" / "REPORT #NNNN · title".
 
