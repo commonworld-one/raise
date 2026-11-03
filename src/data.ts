@@ -261,23 +261,35 @@ export async function joinRaise(db: D1Database, museId: number, raiseId: number,
   const r = await db.prepare('SELECT id, kind, muse_id, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; kind: Kind; muse_id: number; granted_at: number | null }>();
   if (!r) return { ok: false, error: 'not_found' };
   if (r.granted_at) return { ok: false, error: 'granted' };
-  const ins = await db.prepare('INSERT OR IGNORE INTO joins (raise_id, muse_id, note, created_at) VALUES (?, ?, ?, ?)').bind(raiseId, museId, note, now).run();
-  if (!ins.meta.changes) {
-    const c = await db.prepare('SELECT joins_count FROM raises WHERE id = ?').bind(raiseId).first<{ joins_count: number }>();
-    return { ok: true, joined: false, joins_count: c!.joins_count };
-  }
+  // The read above is only a fast path: a grant (or a hide) can commit between it and the write.
+  // So the join and every side effect run in one batch (one D1 transaction), conditional on the
+  // RAISE still being open at write time. The INSERT ... WHERE EXISTS is the gate; each later
+  // statement changes exactly one row and runs only when the statement before it did
+  // (changes() reads the statement before it), so a closed RAISE or a repeat join writes nothing.
+  // Reports are never granted (granted_at stays NULL), so their "me too" behaves as before.
   const season = seasonOf(now);
+  const after = 'changes() = 1';
   const res = await db.batch<{ joins_count: number }>([
-    db.prepare('UPDATE raises SET joins_count = joins_count + 1, last_activity_at = ? WHERE id = ? RETURNING joins_count').bind(now, raiseId),
-    bumpDaily(db, raiseId, dayStr(now)),
-    db.prepare('UPDATE muses SET joins_count = joins_count + 1, points_all = points_all + ? WHERE id = ?').bind(POINTS.join, museId),
-    bumpPoints(db, museId, season, POINTS.join),
-    db.prepare('UPDATE muses SET points_all = points_all + ? WHERE id = ?').bind(POINTS.joinedAuthor, r.muse_id),
-    bumpPoints(db, r.muse_id, season, POINTS.joinedAuthor),
+    db.prepare(`INSERT OR IGNORE INTO joins (raise_id, muse_id, note, created_at) SELECT ?1, ?2, ?3, ?4
+      WHERE EXISTS (SELECT 1 FROM raises WHERE id = ?1 AND hidden = 0 AND granted_at IS NULL)`).bind(raiseId, museId, note, now),
+    db.prepare(`UPDATE raises SET joins_count = joins_count + 1, last_activity_at = ? WHERE id = ? AND ${after} RETURNING joins_count`).bind(now, raiseId),
+    db.prepare(`INSERT INTO raise_daily (raise_id, day, joins) SELECT ?, ?, 1 WHERE ${after} ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1`).bind(raiseId, dayStr(now)),
+    db.prepare(`UPDATE muses SET joins_count = joins_count + 1, points_all = points_all + ? WHERE id = ? AND ${after}`).bind(POINTS.join, museId),
+    db.prepare(`INSERT INTO muse_points (muse_id, season, points) SELECT ?, ?, ? WHERE ${after} ON CONFLICT (muse_id, season) DO UPDATE SET points = points + excluded.points`).bind(museId, season, POINTS.join),
+    db.prepare(`UPDATE muses SET points_all = points_all + ? WHERE id = ? AND ${after}`).bind(POINTS.joinedAuthor, r.muse_id),
+    db.prepare(`INSERT INTO muse_points (muse_id, season, points) SELECT ?, ?, ? WHERE ${after} ON CONFLICT (muse_id, season) DO UPDATE SET points = points + excluded.points`).bind(r.muse_id, season, POINTS.joinedAuthor),
     // A "me too" on a Report is a new dated occurrence.
-    ...(r.kind === 'report' ? [addOccurrence(db, raiseId, museId, now)] : []),
+    ...(r.kind === 'report'
+      ? [db.prepare(`INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) SELECT ?, ?, ?, '', '', '', ? WHERE ${after}`).bind(raiseId, museId, now, now)]
+      : []),
   ]);
-  return { ok: true, joined: true, joins_count: res[0]!.results[0]!.joins_count };
+  const counted = res[1]!.results[0]?.joins_count;
+  if (counted != null) return { ok: true, joined: true, joins_count: counted };
+  // Nothing written: either this Muse already joined, or the RAISE closed (granted or hidden) meanwhile.
+  const c = await db.prepare('SELECT joins_count, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ joins_count: number; granted_at: number | null }>();
+  if (!c) return { ok: false, error: 'not_found' };
+  if (c.granted_at) return { ok: false, error: 'granted' };
+  return { ok: true, joined: false, joins_count: c.joins_count };
 }
 
 export const HIDE_AFTER_FLAGS = 5;
