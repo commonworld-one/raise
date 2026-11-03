@@ -149,6 +149,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (m) {
     // The seven characters always have a profile, with zero numbers when the database has no row (product).
     const muse = (await getMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!);
+    if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     if (!muse) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
     const n = page(m[2]);
     const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.now);
@@ -217,8 +218,8 @@ function demoNoApi(ctx: Ctx, req: Request, path: string): Response {
 
 /** Demo host: every visible card, for the headline counters that add up the cards' own numbers. Read only. */
 async function demoCards(db: D1Database): Promise<NonNullable<Ctx['cards']>> {
-  const r = await db.prepare('SELECT id, joins_count, granted_at FROM raises WHERE hidden = 0 LIMIT 1000').all<{ id: number; joins_count: number; granted_at: number | null }>();
-  return r.results.map((x) => ({ id: x.id, joins_count: x.joins_count, granted: x.granted_at != null }));
+  const r = await db.prepare('SELECT id, joins_count, granted_at, muse_id FROM raises WHERE hidden = 0 LIMIT 1000').all<{ id: number; joins_count: number; granted_at: number | null; muse_id: number }>();
+  return r.results.map((x) => ({ id: x.id, joins_count: x.joins_count, granted: x.granted_at != null, muse_id: x.muse_id }));
 }
 
 async function reportAreas(db: D1Database): Promise<string[]> {

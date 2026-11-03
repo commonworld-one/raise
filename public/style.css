@@ -96,3 +96,15 @@ table{display:block;overflow-x:auto}}
 .card .stat.seen{font-size:30px;margin-top:16px;font-variant-numeric:tabular-nums}.card .stat.big{font-variant-numeric:tabular-nums}
 /* /r/NNNN live card: the big numbers size from the card's width, so they never overflow it. */
 .card[data-live-card] .stat{white-space:nowrap;max-width:100%;letter-spacing:-.03em}.card[data-live-card] .stat.big{font-size:clamp(24px,13cqi,60px)}.card[data-live-card] .stat.seen{font-size:clamp(16px,8.5cqi,30px)}
+/* Demo host only: big live Muse points (src/live.ts museScript) on /corporation, /muses and Muse profiles */
+.office{min-width:0;overflow:hidden;container-type:inline-size}
+.office .opts{display:block;margin-top:6px;font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:clamp(16px,12.5cqi,46px);letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap;max-width:100%}
+.lbt .lpts{font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:clamp(16px,2.4vw,26px);letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}.lbt .lpts.all{font-size:clamp(14px,1.9vw,20px);color:var(--mute)}
+.lbt tbody tr{position:relative;background:var(--card)}
+.mcard{min-width:0;overflow:hidden;container-type:inline-size}
+.mcard .mpts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.mcard .mpts .pn{display:block;font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:clamp(14px,6.5cqi,30px);letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mcard .mpts small{color:var(--mute);font-size:12.5px}
+.headline.mp{margin:18px 0 26px}
+/* Phones (390 px): the board keeps one line per Muse without sideways scrolling; Client moves out, numbers stay big. */
+@media (max-width:560px){.lbt{display:table}.lbt .cl{display:none}.lbt td,.lbt th{padding:9px 6px}.lbt .lpts{font-size:17px}.lbt .lpts.all{font-size:13.5px}.lbt .av{width:26px;height:26px}.lbt a.row{gap:6px}}

@@ -150,7 +150,7 @@ tick();resort();if(!document.hidden)start();
  */
 export interface Headline { label: string; base: number; seeds: number[]; scale: number; cards?: 'all' | 'granted' }
 /** A demo card as the headline counters need it: its id, stored count, and whether it is granted. */
-export interface DemoCard { id: number; joins_count: number; granted: boolean }
+export interface DemoCard { id: number; joins_count: number; granted: boolean; muse_id?: number }
 export const HEADLINES = {
   // "Muses joined" is the sum of the cards' own numbers: every live card's LIVE.count (what its row and /r page show)
   // plus the stored counts of the scenario cards. It restarts with the season, exactly like the cards it adds up.
@@ -249,4 +249,78 @@ var a=null;function start(){if(a||document.hidden)return;set(Date.now());a=setIn
 function stop(){clearInterval(a);a=null}
 document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});start();
 })((${liveModel.toString()})(),${Number(id)},${live ? 'true' : 'false'});</script>`;
+}
+
+// ---------- live Muse points (demo host only) ----------
+/**
+ * A Muse's points on the demo host follow the live cards, by the POINTS rules (src/data.ts): every join on one of
+ * its own cards gives the author 1, so its season points are its stored season points plus the live count of each
+ * of its own cards (the same number the card shows), plus 1 per join it makes on others' cards (a quarter of a live
+ * count on its own synthetic seed, 910000 + Muse id; never a card id). Season points restart with the 6-hour season,
+ * like the cards. All-time points use LIVE.total instead of LIVE.count, so they only go up and are never below the season.
+ * Scenario cards (#0418, #0419) keep their stored numbers, already inside the stored points.
+ */
+export const MUSE_SEED = 910000;
+export const MUSE_JOIN_SHARE = 0.25;
+export interface MusePoints { m: number; ids: number[]; s: number; a: number }
+export interface PointsMuse { id: number; points_all: number; season_points?: number }
+
+export function musePointsSpec(m: PointsMuse, cards: DemoCard[]): MusePoints {
+  return { m: m.id, ids: cards.filter((c) => c.muse_id === m.id && !isScenario(c.id)).map((c) => c.id), s: m.season_points || 0, a: m.points_all };
+}
+export function museSeasonPoints(p: MusePoints, t: number): number {
+  return p.ids.reduce((x, id) => x + LIVE.count(id, t), p.s + Math.floor(MUSE_JOIN_SHARE * LIVE.count(MUSE_SEED + p.m, t)));
+}
+export function museAllPoints(p: MusePoints, t: number): number {
+  return p.ids.reduce((x, id) => x + LIVE.total(id, t), p.a + Math.floor(MUSE_JOIN_SHARE * LIVE.total(MUSE_SEED + p.m, t)));
+}
+/** Live season and all-time points on the demo host; the product host gets the stored values back, untouched. */
+export function applyMusePoints<T extends PointsMuse>(ctx: Pick<Ctx, 'demo' | 'cards'>, items: T[], now: number): T[] {
+  if (!ctx.demo) return items;
+  return items.map((m) => {
+    const p = musePointsSpec(m, ctx.cards ?? []);
+    return { ...m, season_points: museSeasonPoints(p, now), points_all: museAllPoints(p, now) };
+  });
+}
+
+/** Avatar + name the office cards swap in when the live leader changes. */
+export interface OfficeMuse { slug: string; name: string; av: string }
+
+/**
+ * Ticks every live points number ([data-mp]="<Muse id>", data-k = s | a), re-sorts each [data-live-muses] block
+ * (s = by season, a = by all time) every ~4.5 s with a FLIP animation and renumbers its [data-rank] cells, and gives
+ * the [data-office="i"] cards the live leaders. prefers-reduced-motion: set once, no ticking, no animation.
+ * Pauses in hidden tabs.
+ */
+export function museScript(ctx: Pick<Ctx, 'cards' | 'base'>, muses: PointsMuse[], office: Record<number, OfficeMuse> = {}): string {
+  const cards = ctx.cards ?? [];
+  const spec: Record<number, MusePoints & { o?: OfficeMuse }> = {};
+  for (const m of muses) spec[m.id] = { ...musePointsSpec(m, cards), ...(office[m.id] ? { o: office[m.id] } : {}) };
+  const data = JSON.stringify(spec).replace(/</g, '\\u003c');
+  return `<script>${SHIM}(function(M,P,base,SEED,SH){
+var f=function(n){return Math.floor(n).toLocaleString('en-US')};
+function sv(p,t){var v=p.s+Math.floor(SH*M.count(SEED+p.m,t));for(var i=0;i<p.ids.length;i++)v+=M.count(p.ids[i],t);return v}
+function av(p,t){var v=p.a+Math.floor(SH*M.total(SEED+p.m,t));for(var i=0;i<p.ids.length;i++)v+=M.total(p.ids[i],t);return v}
+var lists=[].slice.call(document.querySelectorAll('[data-live-muses]'));
+var rm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function tick(){var t=Date.now();document.querySelectorAll('[data-mp]').forEach(function(el){var p=P[el.getAttribute('data-mp')];if(!p)return;
+el.textContent=f(el.getAttribute('data-k')==='a'?av(p,t):sv(p,t))})}
+function key(el,k,t){var p=P[el.getAttribute('data-muse')];return p?(k==='a'?av(p,t):sv(p,t)):-1}
+function resort(anim){var t=Date.now();lists.forEach(function(col){var k=col.getAttribute('data-live-muses');var items=[].slice.call(col.children);
+var sorted=items.slice().sort(function(a,b){return key(b,k,t)-key(a,k,t)});
+if(!sorted.every(function(el,i){return el===items[i]})){var first=anim?items.map(function(el){return el.getBoundingClientRect().top}):null;
+sorted.forEach(function(el){col.appendChild(el)});
+if(anim)items.forEach(function(el,i){var dy=first[i]-el.getBoundingClientRect().top;if(!dy)return;el.style.transition='none';el.style.transform='translateY('+dy+'px)';el.getBoundingClientRect();
+el.style.transition='transform .6s cubic-bezier(.2,.7,.2,1)';el.style.transform=''})}
+sorted.forEach(function(el,i){var r=el.querySelector('[data-rank]');if(r)r.textContent=String(i+1).padStart(2,'0')});
+if(col.hasAttribute('data-office-source'))office(sorted)})}
+function office(rows){document.querySelectorAll('[data-office]').forEach(function(card){var row=rows[+card.getAttribute('data-office')];if(!row)return;
+var id=row.getAttribute('data-muse'),p=P[id];if(!p||!p.o||card.getAttribute('data-muse')===id)return;card.setAttribute('data-muse',id);
+card.setAttribute('href',base+'/m/'+p.o.slug);var a=card.querySelector('.av');if(a)a.outerHTML=p.o.av;var n=card.querySelector('[data-office-name]');if(n)n.textContent=p.o.name;
+var s=card.querySelector('[data-mp]');if(s)s.setAttribute('data-mp',id)})}
+tick();resort(false);tick();if(rm)return;
+var a=null,b=null;function start(){if(a||document.hidden)return;tick();a=setInterval(tick,1000);if(lists.length)b=setInterval(function(){resort(true);tick()},4500)}
+function stop(){clearInterval(a);clearInterval(b);a=b=null}
+document.addEventListener('visibilitychange',function(){document.hidden?stop():start()});start();
+})((${liveModel.toString()})(),${data},${JSON.stringify(ctx.base ?? '')},${MUSE_SEED},${MUSE_JOIN_SHARE});</script>`;
 }

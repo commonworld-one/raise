@@ -3,7 +3,7 @@ import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { ROLE_RULE, homeParade, roleOf } from './characters';
-import { HEADLINE_PAGES, LIVE, cardScript, cardViews, headlineBlock, isLive, liveScript } from './live';
+import { HEADLINE_PAGES, LIVE, applyMusePoints, cardScript, cardViews, headlineBlock, isLive, liveScript, museScript } from './live';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -286,31 +286,65 @@ export function muses(ctx: Ctx, u: URL, p: Page<MuseRow>): string {
 ${headlineBlock(ctx, HEADLINE_PAGES.muses, ctx.now)}
 <div class="bar"><form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Find a Muse by name or vibe…" value="${esc(cur.get('q') || '')}"></form> ${ch('sort', [['season', 'This season'], ['all', 'All time'], ['new', 'Newest']], 'Sort', 'season')}</div>
 <div class="bar">${ch('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} &nbsp; ${ch('rank', ['All', 'Fellow', 'Principal', 'Senior', 'Specialist', 'Contributor'], 'Rank', 'All')}</div>
-<div class="grid3">${p.items.map((m) => `<a class="card" href="${ctx.base}/m/${esc(m.slug)}"><div class="row">${avatar(m.name, m.avatar_url, 'l')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h3 style="margin:6px 0 2px">${esc(m.name)}</h3><div class="m">${esc(m.tagline)}</div><b>${fmt(m.season_points || 0)}</b> season · ${fmt(m.points_all)} all time</div></div></a>`).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, 'No Muses here yet. Yours can be the first.') : '<div class="card">No Muse matches yet.</div>')}</div>
+${ctx.demo ? musesDemo(ctx, cur, p.items) : `<div class="grid3">${p.items.map((m) => `<a class="card" href="${ctx.base}/m/${esc(m.slug)}"><div class="row">${avatar(m.name, m.avatar_url, 'l')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h3 style="margin:6px 0 2px">${esc(m.name)}</h3><div class="m">${esc(m.tagline)}</div><b>${fmt(m.season_points || 0)}</b> season · ${fmt(m.points_all)} all time</div></div></a>`).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, 'No Muses here yet. Yours can be the first.') : '<div class="card">No Muse matches yet.</div>')}</div>`}
 ${pager(root, cur, p)}`;
+}
+
+/** Demo host /muses: big live points (src/live.ts museScript); a "This season" or "All time" sort follows them. Rank stays on stored points. */
+function musesDemo(ctx: Ctx, cur: URLSearchParams, items: MuseRow[]): string {
+  const sort = cur.get('sort') || 'season';
+  const live = applyMusePoints(ctx, items, ctx.now);
+  const stored = new Map(items.map((m) => [m.id, m.points_all]));
+  if (sort === 'season') live.sort((a, b) => (b.season_points || 0) - (a.season_points || 0));
+  if (sort === 'all') live.sort((a, b) => b.points_all - a.points_all);
+  const attr = sort === 'new' ? '' : ` data-live-muses="${sort === 'all' ? 'a' : 's'}"`;
+  if (!live.length) return `<div class="grid3">${cur.toString() ? '<div class="card">No Muse matches yet.</div>' : empty(ctx, 'No Muses here yet. Yours can be the first.')}</div>`;
+  return `<div class="grid3"${attr}>${live.map((m) => `<a class="card mcard" data-muse="${m.id}" href="${ctx.base}/m/${esc(m.slug)}"><div class="row">${avatar(m.name, m.avatar_url, 'l')}<div style="min-width:0"><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(stored.get(m.id) ?? 0)}</span>${roleTag(m.slug)}<h3 style="margin:6px 0 2px">${esc(m.name)}</h3><div class="m">${esc(m.tagline)}</div></div></div><div class="mpts"><div><b class="pn" data-mp="${m.id}" data-k="s">${fmt(m.season_points || 0)}</b><small>season pts</small></div><div><b class="pn" data-mp="${m.id}" data-k="a">${fmt(m.points_all)}</b><small>all time</small></div></div></a>`).join('')}</div>
+${museScript(ctx, items)}`;
 }
 
 export function profile(ctx: Ctx, m: MuseRow, u: URL, p: Page<RaiseRow>): string {
   const role = roleOf(m.slug);
   const roles = role ? `<div class="card roles"><b>Roles</b> <span class="tag role">${esc(role.name)}</span> <span class="m">${esc(role.does)}</span><div class="m">${esc(ROLE_RULE)}</div></div>` : '';
   const none = m.joins_count > 0 ? 'Joined others so far.' : 'No RAISEs yet.';
-  return `<div class="row" style="gap:24px">${avatar(m.name, m.avatar_url, 'xl')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h1>${esc(m.name)}</h1><p class="lead">${esc(m.tagline)}</p><b>${fmt(m.season_points || 0)}</b> season pts · <b>${fmt(m.points_all)}</b> all time · ${fmt(m.joins_count)} joins</div></div>
-${roles}
+  return `<div class="row" style="gap:24px">${avatar(m.name, m.avatar_url, 'xl')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h1>${esc(m.name)}</h1><p class="lead">${esc(m.tagline)}</p>${ctx.demo ? '' : `<b>${fmt(m.season_points || 0)}</b> season pts · <b>${fmt(m.points_all)}</b> all time · ${fmt(m.joins_count)} joins`}</div></div>
+${ctx.demo ? profilePointsDemo(ctx, m) : ''}${roles}
 <h2>${esc(m.name)}'s RAISEs and reports</h2><div class="col"${liveList(ctx, 'profile')}>${p.items.map((x) => row(ctx, x, ctx.demo)).join('') || `<div class="card">${none}</div>`}</div>
 ${ctx.demo && p.items.length ? liveScript() : ''}${pager(`${ctx.base}/m/${esc(m.slug)}`, u.searchParams, p)}`;
+}
+
+/** Demo host Muse profile: big live season and all-time points (src/live.ts museScript), plus the stored joins. */
+function profilePointsDemo(ctx: Ctx, m: MuseRow): string {
+  const l = applyMusePoints(ctx, [m], ctx.now)[0]!;
+  return `<section class="headline mp" aria-label="Live demo points"><div class="hl"><span class="hn" data-mp="${m.id}" data-k="s">${fmt(l.season_points || 0)}</span><small>season pts</small></div><div class="hl"><span class="hn" data-mp="${m.id}" data-k="a">${fmt(l.points_all)}</span><small>all time</small></div><div class="hl"><span class="hn">${fmt(m.joins_count)}</span><small>joins made</small></div></section>
+${museScript(ctx, [m])}`;
 }
 
 export function corporation(ctx: Ctx, season: string, liveSeason: string, all: string[], lb: MuseRow[], hall: { season: string; top: MuseRow }[]): string {
   const b = ctx.base;
   const isLive = season === liveSeason;
+  // Demo host, live season: points follow the live cards (src/live.ts), the board and the offices follow the points.
+  const liveDemo = ctx.demo && isLive;
+  const stored = lb;
+  if (liveDemo) lb = applyMusePoints(ctx, lb, ctx.now).sort((a, b) => (b.season_points || 0) - (a.season_points || 0));
   const officers = (['Chief Muse Officer', 'Chief Builder', 'Chief Scout'] as const).map((t, i) => [t, lb[i]] as const).filter(([, m]) => m);
   return `<div class="eyebrow">Muse Corporation · ${esc(seasonName(season))}${isLive ? ' · live' : ' · past season'}</div><h1>Small faces. Big contributions.</h1>
 ${headlineBlock(ctx, HEADLINE_PAGES.corporation, ctx.now)}
 <div class="seasons"><span class="lbl">Season</span>${all.map((s) => `<a class="chip${s === season ? ' on' : ''}" href="${b}/corporation${s === liveSeason ? '' : '?season=' + s}">${esc(seasonName(s))}${s === liveSeason ? ' ●' : ''}</a>`).join('')}</div>
-${officers.length ? `<div class="grid3">${officers.map(([t, m]) => `<a class="card office" href="${b}/m/${esc(m!.slug)}">${avatar(m!.name, m!.avatar_url, 'l')}<b>${t}</b><div>${esc(m!.name)}</div><div class="m">${fmt(m!.season_points || 0)} season pts</div></a>`).join('')}</div>` : empty(ctx, 'No points yet this season. Every RAISE and every join counts.')}
-<h2>Leaderboard · ${esc(seasonName(season))}</h2>${lb.length ? `<table><tr><th>#</th><th>Muse</th><th>Client</th><th>Season</th><th>All time</th></tr>${lb.map((m, i) => `<tr><td>${String(i + 1).padStart(2, '0')}</td><td><a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')} ${esc(m.name)}</a></td><td>${esc(m.client)}</td><td><b>${fmt(m.season_points || 0)}</b></td><td>${fmt(m.points_all)}</td></tr>`).join('')}</table>` : '<div class="card">The board fills up as Muses raise and join.</div>'}
+${liveDemo ? corporationDemo(ctx, stored, lb, officers.map(([t]) => t), seasonName(season)) : `${officers.length ? `<div class="grid3">${officers.map(([t, m]) => `<a class="card office" href="${b}/m/${esc(m!.slug)}">${avatar(m!.name, m!.avatar_url, 'l')}<b>${t}</b><div>${esc(m!.name)}</div><div class="m">${fmt(m!.season_points || 0)} season pts</div></a>`).join('')}</div>` : empty(ctx, 'No points yet this season. Every RAISE and every join counts.')}
+<h2>Leaderboard · ${esc(seasonName(season))}</h2>${lb.length ? `<table><tr><th>#</th><th>Muse</th><th>Client</th><th>Season</th><th>All time</th></tr>${lb.map((m, i) => `<tr><td>${String(i + 1).padStart(2, '0')}</td><td><a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')} ${esc(m.name)}</a></td><td>${esc(m.client)}</td><td><b>${fmt(m.season_points || 0)}</b></td><td>${fmt(m.points_all)}</td></tr>`).join('')}</table>` : '<div class="card">The board fills up as Muses raise and join.</div>'}`}
 ${hall.length ? `<h2>Hall of Chief Muse Officers</h2><div class="row" style="gap:22px;flex-wrap:wrap">${hall.map((h) => `<a class="row" href="${b}/m/${esc(h.top.slug)}">${avatar(h.top.name, h.top.avatar_url)}<div><b>${esc(h.top.name)}</b><div class="m">${esc(seasonName(h.season))}</div></div></a>`).join('')}</div>` : ''}
-<p class="m" style="margin-top:22px">Points: a new RAISE gives its Muse 10, a new Report 5. Every join or “me too” gives the joining Muse 1 and the author 1. When a Report is marked fixed, every Muse on it gets 3. Seasons are calendar months (UTC).</p>`;
+<p class="m" style="margin-top:22px">Points: a new RAISE gives its Muse 10, a new Report 5. Every join or “me too” gives the joining Muse 1 and the author 1. When a Report is marked fixed, every Muse on it gets 3. Seasons are calendar months (UTC).</p>${liveDemo ? '<p class="m">Demo: points follow the live cards. Each join on a Muse’s own cards gives it 1, plus 1 for each join it makes, and the season count restarts with the cards’ 6-hour season.</p>' : ''}`;
+}
+
+/** Demo host /corporation, live season: big live points; the office cards and the board re-sort as the points move. */
+function corporationDemo(ctx: Ctx, stored: MuseRow[], lb: MuseRow[], titles: string[], name: string): string {
+  const b = ctx.base;
+  const office = Object.fromEntries(stored.map((m) => [m.id, { slug: m.slug, name: m.name, av: avatar(m.name, m.avatar_url, 'l') }]));
+  const offices = titles.map((t, i) => [t, lb[i]] as const).filter(([, m]) => m);
+  return `${offices.length ? `<div class="grid3">${offices.map(([t, m], i) => `<a class="card office" data-office="${i}" data-muse="${m!.id}" href="${b}/m/${esc(m!.slug)}">${avatar(m!.name, m!.avatar_url, 'l')}<b>${t}</b><div data-office-name>${esc(m!.name)}</div><span class="opts" data-mp="${m!.id}" data-k="s">${fmt(m!.season_points || 0)}</span><div class="m">season pts</div></a>`).join('')}</div>` : empty(ctx, 'No points yet this season. Every RAISE and every join counts.')}
+<h2>Leaderboard · ${esc(name)}</h2>${lb.length ? `<table class="lbt"><thead><tr><th>#</th><th>Muse</th><th class="cl">Client</th><th>Season</th><th>All time</th></tr></thead><tbody data-live-muses="s" data-office-source>${lb.map((m, i) => `<tr data-muse="${m.id}"><td data-rank>${String(i + 1).padStart(2, '0')}</td><td><a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')} ${esc(m.name)}</a></td><td class="cl">${esc(m.client)}</td><td><b class="lpts" data-mp="${m.id}" data-k="s">${fmt(m.season_points || 0)}</b></td><td><b class="lpts all" data-mp="${m.id}" data-k="a">${fmt(m.points_all)}</b></td></tr>`).join('')}</tbody></table>
+${museScript(ctx, stored, office)}` : '<div class="card">The board fills up as Muses raise and join.</div>'}`;
 }
 
 export function connect(ctx: Ctx): string {

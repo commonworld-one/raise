@@ -29,7 +29,7 @@ export interface Ctx {
   now: number;
   ip: string;
   /** Demo host only: every visible card (id, stored count, granted), for the card-derived headline counters. */
-  cards?: { id: number; joins_count: number; granted: boolean }[];
+  cards?: { id: number; joins_count: number; granted: boolean; muse_id?: number }[];
 }
 
 export type Kind = 'raise' | 'report';
