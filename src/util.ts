@@ -1,0 +1,61 @@
+export const PER_PAGE = 50;
+export const DAY_MS = 86_400_000;
+export const STILL_HAPPENING_MS = 3 * DAY_MS;
+
+export const esc = (s: unknown): string =>
+  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+export const fmt = (n: number): string => Math.round(n).toLocaleString('en-US');
+export const pad = (n: number): string => String(n).padStart(4, '0');
+
+export const dayStr = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+export const seasonOf = (ms: number): string => new Date(ms).toISOString().slice(0, 7);
+export const iso = (ms: number | null | undefined): string | null => (ms == null ? null : new Date(ms).toISOString());
+
+export function seasonName(season: string): string {
+  const [y, m] = season.split('-').map(Number);
+  return new Date(Date.UTC(y!, m! - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+export function ago(ms: number, now: number): string {
+  const m = Math.max(0, Math.round((now - ms) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  if (m < 1440) return `${Math.round(m / 60)} h ago`;
+  return `${Math.round(m / 1440)} d ago`;
+}
+
+export const ACTIVE_MS: Record<string, number> = { '24h': DAY_MS, '7d': 7 * DAY_MS, '30d': 30 * DAY_MS };
+
+export const RANKS: [number, string][] = [
+  [2000, 'Fellow'],
+  [1000, 'Principal'],
+  [600, 'Senior'],
+  [250, 'Specialist'],
+  [0, 'Contributor'],
+];
+export const rankOf = (points: number): string => RANKS.find((r) => points >= r[0])![1];
+export function rankRange(rank: string): [number, number] | null {
+  const i = RANKS.findIndex((r) => r[1] === rank);
+  if (i < 0) return null;
+  return [RANKS[i]![0], i === 0 ? Number.MAX_SAFE_INTEGER : RANKS[i - 1]![0] - 1];
+}
+
+/** Snapshot id: the minute the list was read (lists are cached ~60s). */
+export const snapshotId = (now: number): string => 's' + Math.floor(now / 60000).toString(36);
+
+export async function sha256hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export const json = (data: unknown, init: ResponseInit = {}): Response =>
+  new Response(JSON.stringify(data, null, 2), {
+    ...init,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', ...(init.headers || {}) },
+  });
+
+export const clampInt = (v: unknown, lo: number, hi: number, dflt: number): number => {
+  const n = Number.parseInt(String(v ?? ''), 10);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+};

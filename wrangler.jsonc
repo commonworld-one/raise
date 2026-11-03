@@ -1,0 +1,35 @@
+// Muse RAISE: one Worker for the site, the demo, the JSON API and the MCP endpoint.
+// Deploy: Cloudflare Workers Builds connected to the `main` branch (see README "Deploy").
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "raise",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      // Real data only. Starts empty: no seed, no example numbers.
+      "binding": "DB",
+      "database_name": "raise-prod",
+      // PLACEHOLDER: replace with the id of the D1 database "raise-prod" from the Cloudflare dashboard.
+      "database_id": "PLACEHOLDER-raise-prod-database-id",
+      "migrations_dir": "migrations"
+    },
+    {
+      // Hackathon demo data, served under /demo/... . Seeded from seed/demo.sql.
+      "binding": "DEMO_DB",
+      "database_name": "raise-demo",
+      // PLACEHOLDER: replace with the id of the D1 database "raise-demo" from the Cloudflare dashboard.
+      "database_id": "PLACEHOLDER-raise-demo-database-id",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "SITE_URL": "https://raise.commonworld.one",
+    "REPO_URL": "https://github.com/commonworld-one/raise"
+  }
+}
