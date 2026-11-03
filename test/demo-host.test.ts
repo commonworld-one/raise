@@ -27,7 +27,7 @@ describe('host -> database', () => {
     expect(d.title).toBe('Wings to fly to the Moon');
     expect(d.url).toBe(`${DEMO}/r/0418`);
     expect((await get('/api/v1/raises/418')).status).toBe(404); // demo row never shows on the product
-    expect((await get('/m/atlas')).status).toBe(404);
+    expect((await get('/m/no-such-muse')).status).toBe(404); // characters (e.g. /m/atlas) render from static data, see demo-stage.test.ts
     expect((await dget('/m/atlas')).status).toBe(200);
   });
 
@@ -81,8 +81,12 @@ describe('/demo on the product host', () => {
 });
 
 describe('/demo on the demo host', () => {
-  it('drops the prefix, same host', async () => {
-    for (const [from, to] of [['/demo', '/'], ['/demo/', '/'], ['/demo/raises?sort=new', '/raises?sort=new'], ['/demo/r/0418', '/r/0418']]) {
+  it('/demo is its own page (200), not a redirect', async () => {
+    const r = await dget('/demo', { redirect: 'manual' });
+    expect(r.status).toBe(200);
+  });
+  it('old /demo/... links drop the prefix, same host; /demo/ -> /demo', async () => {
+    for (const [from, to] of [['/demo/', '/demo'], ['/demo/raises?sort=new', '/raises?sort=new'], ['/demo/r/0418', '/r/0418']]) {
       const r = await dget(from!, { redirect: 'manual' });
       expect(r.status).toBe(301);
       expect(r.headers.get('location')).toBe(DEMO + to);
@@ -95,7 +99,7 @@ describe('demo bar and links', () => {
     for (const p of ['/raises', '/reports?active=all', '/granted', '/r/0418', '/corporation', '/about']) {
       const t = await (await dget(p)).text();
       expect(t).toContain(`<a href="${(PROD + p).replace(/&/g, '&amp;')}">Open the live product ↗</a>`);
-      expect(t).toContain('<a href="/#play">▶ Play the story</a>');
+      expect(t).toContain('<a href="/demo#play">▶ Play the story</a>');
     }
     expect(productUrl(env, '/raises', '?sort=top')).toBe(`${PROD}/raises?sort=top`);
     expect(productUrl(env, '//evil.example/x')).toBe(`${PROD}/evil.example/x`);
@@ -106,12 +110,15 @@ describe('demo bar and links', () => {
       const t = await (await dget(p)).text();
       const nav = t.slice(t.indexOf('<nav aria-label="Main">'), t.indexOf('</nav>'));
       for (const n of NAV_PATHS) expect(nav).toContain(`href="${n}"`);
-      expect(nav).toContain('<a href="/" class="demo">▶ Demo</a>');
+      expect(nav).toContain('<a href="/demo" class="demo">▶ Demo</a>');
       const links = hrefs(t);
-      expect(links.some((h) => h.startsWith('/demo'))).toBe(false);
-      // The only links to the product are the demo bar and footer "live product" links.
-      expect(links.filter((h) => h.startsWith(PROD)).length).toBe(2);
-      expect(links).toContain('/connect');
+      expect(links.filter((h) => h.startsWith('/demo')).every((h) => h === '/demo' || h === '/demo#play')).toBe(true);
+      // Links to the product: the demo bar and footer "live product" links (same path), and "Connect" (product only).
+      const live = (PROD + p).replace(/&/g, '&amp;');
+      const toProd = links.filter((h) => h.startsWith(PROD));
+      expect(toProd.filter((h) => h === live).length).toBe(2);
+      for (const h of toProd) expect([live, `${PROD}/connect`]).toContain(h);
+      expect(links).not.toContain('/connect');
       expect(links).toContain('/about');
     }
   });
@@ -127,10 +134,9 @@ describe('demo bar and links', () => {
     expect(await (await get('/raises?sort=top')).text()).toContain('<meta name="robots" content="noindex,follow">');
   });
 
-  it('product: "▶ Demo", "See it in action" and footer link go to the demo host', async () => {
+  it('product: header "▶ Demo" and footer link go to the demo host', async () => {
     const t = await (await get('/')).text();
     expect(t).toContain(`<a href="${DEMO}/" class="demo">▶ Demo</a>`);
-    expect(t).toMatch(new RegExp(`<a class="btn( ghost)?" href="${DEMO}/">▶ See it in action</a>`));
     expect(t).toContain(`<a href="${DEMO}/">Demo</a>`);
     expect(hrefs(t).some((h) => h.startsWith('/demo'))).toBe(false);
   });

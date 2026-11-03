@@ -1,6 +1,7 @@
 import type { Ctx } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { activityOf, iso, pad, rankOf, snapshotId } from './util';
+import { roleOf } from './characters';
 
 export const raiseUrl = (ctx: Ctx, id: number) => `${ctx.origin}${ctx.base}/r/${pad(id)}`;
 export const museUrl = (ctx: Ctx, slug: string) => `${ctx.origin}${ctx.base}/m/${slug}`;
@@ -55,6 +56,8 @@ export function museJson(ctx: Ctx, m: MuseRow) {
     name: m.name,
     client: m.client,
     tagline: m.tagline,
+    // Roles belong to the seven characters (src/characters.ts); every other Muse has none.
+    role: roleOf(m.slug),
     avatar_url: absAvatar(ctx, m.avatar_url),
     url: museUrl(ctx, m.slug),
     rank: rankOf(m.points_all),
@@ -62,7 +65,7 @@ export function museJson(ctx: Ctx, m: MuseRow) {
     points_season: m.season_points ?? 0,
     raises_count: m.raises_count,
     joins_count: m.joins_count,
-    created_at: iso(m.created_at),
+    created_at: Number.isFinite(m.created_at) ? iso(m.created_at) : null, // null: a character with no row yet
   };
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BASE, DEMO, dget, get } from './helpers';
 
 const DEMO_BAR = (live: string) =>
-  `<div class="demobar">Hackathon demo · <a href="/#play">▶ Play the story</a> · <a href="${live}">Open the live product ↗</a></div>`;
+  `<div class="demobar">Hackathon demo · <a href="/demo#play">▶ Play the story</a> · <a href="${live}">Open the live product ↗</a></div>`;
 
 describe('pages', () => {
   for (const p of ['/', '/raises', '/reports', '/granted', '/muses', '/corporation', '/connect', '/about']) {
@@ -15,24 +15,32 @@ describe('pages', () => {
       expect(t).not.toContain('Hackathon demo');
     });
   }
-  for (const p of ['/', '/raises', '/reports', '/granted', '/muses', '/corporation', '/connect', '/about', '/m/atlas', '/r/0418', '/r/0112']) {
+  for (const p of ['/', '/demo', '/raises', '/reports', '/granted', '/muses', '/corporation', '/about', '/m/atlas', '/m/bob', '/r/0418', '/r/0112']) {
     it(`demo host ${p} -> 200 with demo bar`, async () => {
       const r = await dget(p);
       expect(r.status).toBe(200);
       const t = await r.text();
-      expect(t).toContain(DEMO_BAR(`https://raise.commonworld.one${p}`));
+      expect(t).toContain(DEMO_BAR(`https://raise.commonworld.one${p === '/demo' ? '/' : p}`));
     });
   }
-  it('demo home: story, live counter, every page linked on the demo host', async () => {
-    const t = await (await dget('/')).text();
-    expect(t).toContain('Browse every page with demo data');
+  it('demo /connect -> 301 the product Connect page (Connect lives on the product only)', async () => {
+    const r = await dget('/connect', { redirect: 'manual' });
+    expect(r.status).toBe(301);
+    expect(r.headers.get('location')).toBe('https://raise.commonworld.one/connect');
+  });
+  it('demo home: every page linked on the demo host', async () => {
+    const h = await (await dget('/')).text();
+    expect(h).toContain('Browse every page with demo data');
+    for (const p of ['/demo', '/raises', '/reports', '/granted', '/muses', '/m/atlas', '/r/0418', '/corporation', '/mcp', '/about']) expect(h).toContain(`href="${p}"`);
+    expect(h).not.toContain('href="/connect"');
+  });
+  it('demo /demo: story, live counter, stage', async () => {
+    const t = await (await dget('/demo')).text();
     expect(t).toContain('Wingsmith grants it');
     expect(t).toContain('You can fly now');
     expect(t).toContain('1,240');
     expect(t).toContain('id="play"');
     expect(t).toContain('class="term"');
-    for (const p of ['/raises', '/reports', '/granted', '/muses', '/m/atlas', '/r/0418', '/corporation', '/connect', '/mcp', '/about']) expect(t).toContain(`href="${p}"`);
-    expect(t).not.toContain('href="/demo');
   });
   it('/leaderboard -> 301 /corporation', async () => {
     const r = await get('/leaderboard', { redirect: 'manual' });
@@ -83,7 +91,7 @@ describe('pages', () => {
     expect(d).toContain('You can fly now');
   });
   it('public text rules', async () => {
-    for (const [host, p] of [[BASE, '/'], [BASE, '/about'], [BASE, '/connect'], [DEMO, '/'], [DEMO, '/about'], [DEMO, '/raises']] as const) {
+    for (const [host, p] of [[BASE, '/'], [BASE, '/about'], [BASE, '/connect'], [BASE, '/m/bob'], [DEMO, '/'], [DEMO, '/demo'], [DEMO, '/about'], [DEMO, '/raises'], [DEMO, '/m/bob']] as const) {
       const t = (await (await get(p, {}, host)).text()).toLowerCase();
       for (const bad of ['official', 'integrated with muse', 'backed by meta', 'simulated', 'the team', 'jolly', 'muse-logo']) expect(t).not.toContain(bad);
     }

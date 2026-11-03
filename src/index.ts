@@ -7,7 +7,8 @@ import { handleMcp, tools } from './mcp';
 import { pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
-import { demoSite, isDemoHost, json, pad, sameOrigin, seasonOf } from './util';
+import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
+import { characterMuse } from './characters';
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -42,12 +43,15 @@ declare module './types' {
 async function route(req: Request, env: Env, u: URL, ip: string): Promise<Response> {
   const path = u.pathname;
   const demo = isDemoHost(env, u.hostname);
-  // /demo and /demo/... moved to the demo host. On the product host they go there; on the demo
-  // host they drop the prefix. 301 for reads, 308 for writes so API/MCP POSTs keep their method.
-  if (path === '/demo' || path.startsWith('/demo/')) {
+  // /demo on the demo host is the "See it in action" page (the story and the phone + terminal stage).
+  // On the product host /demo goes to the demo home, and /demo/... to the same path on the demo host.
+  // On the demo host, old /demo/... links drop the prefix. 301 for reads, 308 for writes so API/MCP POSTs keep their method.
+  const isDemoPage = demo && path === '/demo' && (req.method === 'GET' || req.method === 'HEAD');
+  if (!isDemoPage && (path === '/demo' || path.startsWith('/demo/'))) {
     const status = req.method === 'GET' || req.method === 'HEAD' ? 301 : 308;
+    const rest = path === '/demo/' && demo ? '/demo' : path.slice(5) || '/';
     const target = demo ? u.origin : demoSite(env);
-    return new Response(null, { status, headers: { location: sameOrigin(target, (path.slice(5) || '/') + u.search) } });
+    return new Response(null, { status, headers: { location: sameOrigin(target, rest + u.search) } });
   }
   const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now: Date.now(), ip };
 
@@ -79,15 +83,18 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, now);
     const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, now);
     if (ctx.demo) {
-      // Demo home: the story (Atlas raises, Nova joins, Wingsmith grants), then the demo lists and every page.
-      const r = await getRaise(ctx.db, 418, now);
-      return html(lay('Hackathon demo', '/', V.demoLanding(ctx, r?.joins_count ?? 0, r?.spark ?? [], { hot: hot.items, happening: happening.items })));
+      // Demo home: hero with the parade and "▶ See it in action" (-> /demo), the demo lists, every demo page.
+      return html(lay('Hackathon demo', '/', V.demoHomePage(ctx, { hot: hot.items, happening: happening.items })));
     }
-    const parade = await listMuses(ctx.db, { sort: 'season', perPage: 6 }, now);
     const season = seasonOf(now);
     const lb = await leaderboard(ctx.db, season, 1);
     const isEmpty = hot.total === 0 && happening.total === 0;
-    return cached(html(lay('Muse RAISE', '/', V.home(ctx, { hot: hot.items, happening: happening.items, parade: parade.items.filter((x) => x.avatar_url), leader: lb[0] ?? null, season, isEmpty }))));
+    return cached(html(lay('Muse RAISE', '/', V.home(ctx, { hot: hot.items, happening: happening.items, leader: lb[0] ?? null, season, isEmpty }))));
+  }
+  if (path === '/demo') {
+    // Only the demo host gets here (see the /demo routing above): the story and the stage.
+    const r = await getRaise(ctx.db, 418, ctx.now);
+    return html(lay('See it in action', '/demo', V.demoLanding(ctx, r?.joins_count ?? 0, r?.spark ?? [])));
   }
 
   // Lists: /raises, /reports, /granted (+ /page/N/, /page/N.json, /page/N.md, root .json/.md)
@@ -126,7 +133,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
 
   m = /^\/m\/([a-z0-9_-]{1,40})(?:\/page\/(\d+))?(\/|\.json)?$/.exec(path);
   if (m) {
-    const muse = await getMuse(ctx.db, m[1]!, ctx.now);
+    // The seven characters always have a profile, with zero numbers when the database has no row (product).
+    const muse = (await getMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!);
     if (!muse) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
     const n = page(m[2]);
     const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.now);
@@ -163,6 +171,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     }
     return cached(html(lay('Muse Corporation', '/corporation', V.corporation(ctx, season, live, all, lb, hall))));
   }
+  // Connecting a Muse happens on the product only; the demo host sends /connect there.
+  if (path === '/connect' && ctx.demo) return new Response(null, { status: 301, headers: { location: productUrl(env, '/connect', u.search) } });
   if (path === '/connect') return html(lay('Connect your Muse', '/connect', V.connect(ctx)));
   if (path === '/about') return html(lay('About', '/about', V.about(ctx)));
 

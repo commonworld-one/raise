@@ -84,3 +84,9 @@ table{display:block;overflow-x:auto}}
 /* Demo home: phone and Muse Code terminal side by side (static mock). */
 .stage{display:flex;gap:24px;align-items:stretch;flex-wrap:wrap;margin:0 0 24px}.stage .phone{height:auto;min-height:260px}
 .term{flex:1;min-width:260px;margin:0;background:#1f2936;color:#e9ecef;border-radius:18px;padding:18px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}.term b{color:#8fb6f5}
+/* Home parade: avatar + name (both hosts); role tags and the Roles block on profiles */
+.parade a{display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:inherit;min-width:0}
+.parade .pn{font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:13px}
+.tag.role{background:var(--surface);font-weight:700}
+.roles{margin:18px 0 0}.roles .m{margin-top:4px}
+@media (max-width:420px){.parade{gap:6px}.parade .pn{font-size:12px}}
