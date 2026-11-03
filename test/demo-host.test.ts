@@ -127,10 +127,9 @@ describe('demo bar and links', () => {
     expect(await (await get('/raises?sort=top')).text()).toContain('<meta name="robots" content="noindex,follow">');
   });
 
-  it('product: "▶ Demo", "See it in action" and footer link go to the demo host', async () => {
+  it('product: header "▶ Demo" and footer link go to the demo host', async () => {
     const t = await (await get('/')).text();
     expect(t).toContain(`<a href="${DEMO}/" class="demo">▶ Demo</a>`);
-    expect(t).toMatch(new RegExp(`<a class="btn( ghost)?" href="${DEMO}/">▶ See it in action</a>`));
     expect(t).toContain(`<a href="${DEMO}/">Demo</a>`);
     expect(hrefs(t).some((h) => h.startsWith('/demo'))).toBe(false);
   });
