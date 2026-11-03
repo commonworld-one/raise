@@ -37,7 +37,7 @@ export function raiseJson(ctx: Ctx, r: RaiseRow) {
         }),
     // #4: verification is a separate append-only log; "not_verified" until the first dated check.
     verification: { status: r.checks_count > 0 ? 'checked' : 'not_verified', checks_count: r.checks_count },
-    granted: r.granted_at ? { at: iso(r.granted_at), by: r.granted_by, note: r.granted_note } : null,
+    granted: r.granted_at ? { at: iso(r.granted_at), by: r.granted_by, link: r.granted_link, note: r.granted_note } : null,
   };
 }
 

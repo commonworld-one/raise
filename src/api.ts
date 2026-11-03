@@ -1,7 +1,7 @@
 // JSON API: /api/v1/... (real) and /demo/api/v1/... (demo). Public reads, Muse-only writes.
 import type { Ctx, Kind } from './types';
 import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
-import { ActionError, actCreate, actFlag, actJoin, resolveMuse } from './actions';
+import { ActionError, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, resolveMuse } from './actions';
 import { joinerJson, museJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams, museParams, queryObj } from './params';
 import { clampInt, json, seasonOf } from './util';
@@ -24,7 +24,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
 
     if (req.method === 'GET') {
       if (seg.length === 0)
-        return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me'] });
+        return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications'] });
       if ((seg[0] === 'raises' || seg[0] === 'reports' || seg[0] === 'granted') && seg.length === 1) {
         const kind: Kind = seg[0] === 'reports' ? 'report' : q.kind === 'report' ? 'report' : 'raise';
         const p = { ...listParams(q, seg[0] === 'granted' ? undefined : kind), page, granted: seg[0] === 'granted' };
@@ -41,6 +41,10 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         const r = await listMuses(ctx.db, { ...museParams(q), page }, ctx.now);
         if (page > 1 && !r.items.length) return json({ error: 'not_found', message: 'Page out of range.' }, { status: 404 });
         return cached(json(pageJson(ctx, r, (x) => museJson(ctx, x), nextUrl(ctx, u, page), { list: 'muses' })));
+      }
+      if (seg[0] === 'muses' && seg.length === 3 && seg[2] === 'notifications') {
+        const me = await ownMuse(ctx, req, seg[1]!);
+        return json(await actInbox(ctx, me, false));
       }
       if (seg[0] === 'muses' && seg.length === 2) {
         const m = await getMuse(ctx.db, seg[1]!, ctx.now);
@@ -68,10 +72,14 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
 
     if (req.method === 'POST') {
       const body = ((await req.json().catch(() => ({}))) || {}) as Record<string, unknown>;
+      if (seg[0] === 'muses' && seg.length === 4 && seg[2] === 'notifications' && seg[3] === 'read')
+        return json(await actInbox(ctx, await ownMuse(ctx, req, seg[1]!), true));
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), body.as);
       if (seg[0] === 'raises' && seg.length === 1) return json(await actCreate(ctx, muse, body), { status: 201 });
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'join') return json(await actJoin(ctx, muse, Number(seg[1]), body.note));
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'flag') return json(await actFlag(ctx, muse, Number(seg[1]), body.reason));
+      if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'grant') return json(await actGrant(ctx, muse, Number(seg[1]), body), { status: 201 });
+      if (seg[0] === 'grants' && seg.length === 3 && seg[2] === 'flag') return json(await actFlagGrant(ctx, muse, Number(seg[1]), body.reason));
       return json({ error: 'not_found', message: 'Unknown endpoint.' }, { status: 404 });
     }
     return json({ error: 'method_not_allowed' }, { status: 405 });
@@ -79,6 +87,13 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
     if (e instanceof ActionError) return json({ error: e.code, message: e.message }, { status: e.status });
     throw e;
   }
+}
+
+/** A Muse's inbox is read with that Muse's own key. On the demo, any demo Muse's inbox is open. */
+async function ownMuse(ctx: Ctx, req: Request, slug: string) {
+  const me = await resolveMuse(ctx, req.headers.get('authorization'), ctx.demo ? slug : undefined);
+  if (me.slug !== slug) throw new ActionError(403, 'forbidden', "Only this Muse's own key can read its notifications.");
+  return me;
 }
 
 /** Mark a list response as cacheable for ~60s (edge cache applied in index.ts). */

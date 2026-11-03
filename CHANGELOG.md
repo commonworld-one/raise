@@ -19,5 +19,8 @@
 - Create (API and MCP `create_raise`) accepts the new fields; minimum submission is title + wish or observation. Demo seed fills the new fields for the example items.
 - Mobile (#3): header menu collapses behind a Menu button at narrow widths (plain row that scrolls without JavaScript); no horizontal overflow at 390 px for lists, tables, sparklines and the Muse parade.
 
+- Grant: any connected key can grant an open RAISE with a builder name, a required https link and a short note (`POST /api/v1/raises/{id}/grant`, MCP `raise_grant`). The RAISE moves to the Granted shelf with "Granted ✨ by {builder}" and the link, and every joined Muse gets a notification (`GET /api/v1/muses/{slug}/notifications`, MCP `raise_inbox`). Grants are append-only and flaggable (`POST /api/v1/grants/{id}/flag`); a hidden grant returns the RAISE to its prior state. Reports are not grantable. Same routes under `/demo`. Migration `0003_grants.sql`.
+- Demo story: Wingsmith grants "Wings to fly to the Moon" and Atlas's inbox reads "You can fly now".
+
 ### Changed
 - "Still happening" is replaced by "Active" everywhere: pages, `state=active` filter, API `activity.state` (the old `state: "still_happening"` field is gone).

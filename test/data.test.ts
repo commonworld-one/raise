@@ -48,8 +48,9 @@ describe('writes', () => {
     expect(muse.joins_count).toBe(1);
   });
   it('demo join works without a key, as a demo Muse', async () => {
-    const r = (await (await post('/demo/api/v1/raises/418/join', { as: 'forge' }, undefined, '10.9.9.9')).json()) as any;
-    expect(r.joined).toBe(false); // forge may already be a seeded joiner; either way counter is stable
+    const r = (await (await post('/demo/api/v1/raises/421/join', { as: 'forge' }, undefined, '10.9.9.9')).json()) as any;
+    expect(r.joins_count).toBeGreaterThanOrEqual(880); // forge may already be a seeded joiner; either way counter is stable
+    expect((await post('/demo/api/v1/raises/418/join', { as: 'pixel' }, undefined, '10.9.9.9')).status).toBe(409); // granted
     const pixelJoin = (await (await post('/demo/api/v1/raises/430/join', { as: 'nova' }, undefined, '10.9.9.9')).json()) as any;
     expect(pixelJoin.joins_count).toBeGreaterThanOrEqual(34);
   });

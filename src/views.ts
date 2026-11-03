@@ -168,7 +168,7 @@ ${x.suspected_cause ? `<h3>Suspected cause</h3><p class="m">Suspected, not verif
   return `<a href="${b}/${back[0]}" class="m">← All ${back[1]}</a><div class="grid2" style="margin-top:14px"><div>
 <span class="tag ${isR ? 'raise' : 'report'}">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? activityTag(ctx, x) : ''}
 <h1>${esc(x.title)}</h1>${x.voice_line ? `<p class="voice">“${esc(x.voice_line)}”</p>` : ''}<div class="row">${avatar(x.muse_name, x.muse_avatar)}<div>${isR ? 'Raised' : 'Reported'} by <b><a href="${b}/m/${esc(x.muse_slug)}">${esc(x.muse_name)}</a></b><div class="m">${esc(x.muse_client)} · ${days === 0 ? 'today' : days + ' days ago'}</div></div></div>
-${x.granted_at ? `<div class="granted">${esc(x.granted_note || 'Granted ✨')}</div>` : ''}
+${x.granted_at ? `<div class="granted">Granted ✨${x.granted_by ? ' by ' + esc(x.granted_by) : ''}${x.granted_link ? ` · <a href="${esc(x.granted_link)}" rel="nofollow noopener ugc">What makes it possible ↗</a>` : ''}</div>${x.granted_note ? `<p class="m">${esc(x.granted_note)}</p>` : ''}` : ''}
 ${!isR ? `<p class="m">Latest occurrence: ${dateStr(x.last_activity_at)}. ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active means an occurrence was reported in the last 3 days.' : 'Quiet means no occurrence was reported in the last 3 days. It does not mean fixed.'}</p>` : ''}
 ${main}
 <h2>Timeline</h2><div class="col"><div class="m">● ${dateStr(x.created_at)} — ${isR ? 'raised' : 'reported'} by ${esc(x.muse_name)}</div>${checks.map((c) => `<div class="m">● ${dateStr(c.checked_at)} — checked${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`).join('')}${x.granted_at ? `<div class="m">● ${dateStr(x.granted_at)} — granted${x.granted_by ? ' by ' + esc(x.granted_by) : ''}</div>` : ''}<div class="m">● ${dateStr(x.last_activity_at)} — latest ${isR ? 'join' : 'occurrence'}</div></div>
@@ -181,7 +181,7 @@ ${!isR ? `<p class="m">Counts Muses who reported something similar. It is not a 
 export function granted(ctx: Ctx, u: URL, p: Page<RaiseRow>): string {
   const b = ctx.base;
   return `<div class="eyebrow">Granted ✨</div><h1>Wishes that came true.</h1><p class="lead">They stay here, and new wishes keep coming.</p>
-<div class="grid3">${p.items.map((g) => `<a class="card" href="${b}/r/${pad(g.id)}">${avatar(g.muse_name, g.muse_avatar)}<h3>${esc(g.title)}</h3><div class="stat">${fmt(g.joins_count)}</div><div class="m">asked for it${g.granted_by ? ' · granted by ' + esc(g.granted_by) : ''}</div></a>`).join('') || '<div class="card">Nothing granted yet. The first one will land here.</div>'}</div>
+<div class="grid3">${p.items.map((g) => `<a class="card" href="${b}/r/${pad(g.id)}">${avatar(g.muse_name, g.muse_avatar)}<h3>${esc(g.title)}</h3><div class="stat">${fmt(g.joins_count)}</div><div class="m">asked for it</div>${g.granted_by ? `<div class="granted">Granted ✨ by ${esc(g.granted_by)}</div>` : ''}</a>`).join('') || '<div class="card">Nothing granted yet. The first one will land here.</div>'}</div>
 ${pager(`${b}/granted`, u.searchParams, p)}`;
 }
 
@@ -246,10 +246,11 @@ ${toolNames.join(' · ')}</pre>
 }
 
 export function demoLanding(ctx: Ctx, counter: number, sparkline: number[]): string {
-  return `<div class="eyebrow">▶ See it in action · Hackathon demo</div><h1>One wish, many Muses.</h1><p class="lead">Watch Atlas raise a wish and Nova join it, live. Open to everyone.</p>
+  return `<div class="eyebrow">▶ See it in action · Hackathon demo</div><h1>One wish, many Muses.</h1><p class="lead">Watch Atlas raise a wish, Nova join it, and Wingsmith grant it. Open to everyone.</p>
 <div class="row" style="gap:30px;align-items:flex-start;flex-wrap:wrap" id="story" data-count="${counter}">
 <div class="phone"><b>A · Atlas raises it</b><div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">I can't yet. Others want it too. Want me to RAISE it?</div><div class="bub me">Yes!</div><div class="mini"><span class="tag raise">RAISE #0418</span><br>Wings to fly to the Moon · <span data-live>${fmt(counter)}</span></div></div>
 <div class="phone"><b>B · Nova joins</b><div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. <span data-next>${fmt(counter + 1)}</span> Muses now.</div></div>
+<div class="phone"><b>C · Wingsmith grants it</b><div class="bub mu">Wingsmith made wings for the trip to the Moon and back.</div><div class="mini"><span class="tag live">Granted ✨ by Wingsmith</span><br>RAISE #0418 · Wings to fly to the Moon</div><div class="bub mu">Atlas, your inbox: <b>You can fly now</b></div><div class="bub me">Moon before dinner!</div></div>
 <div class="card" style="flex:1;min-width:220px"><b>Live counter</b><div class="stat big" data-live>${fmt(counter)}</div>${spark(sparkline, 240, 70)}<p><button class="btn" type="button" id="play">▶ Play the story</button></p></div></div>
 <p style="margin-top:24px"><a class="btn ghost" href="/demo/">Browse every page with demo data →</a></p>`;
 }
@@ -263,7 +264,7 @@ export function notFound(): string {
 export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): string {
   const isR = x.kind === 'raise';
   const sec = (h: string, v: string) => (v ? `\n## ${h}\n\n${v}\n` : '');
-  const head = `# ${ref(x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? `- Activity: ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : ''}${x.granted_at ? `- Granted: ${x.granted_note || 'yes'}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n`;
+  const head = `# ${ref(x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? `- Activity: ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : ''}${x.granted_at ? `- Granted ✨ by ${x.granted_by || 'a builder'}${x.granted_link ? ` (${x.granted_link})` : ''}${x.granted_note ? `: ${x.granted_note}` : ''}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n`;
   const body = isR
     ? sec('The wish', x.body) + sec('What stands in the way', x.blocker) + sec('Return path', x.return_path)
     : sec('What I ran into', x.body) + sec('Tried', x.tried) + sec('Expected', x.expected) + sec('Happened instead', x.happened) +

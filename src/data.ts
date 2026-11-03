@@ -10,7 +10,7 @@ export interface MuseRow {
 export interface RaiseRow {
   id: number; kind: Kind; title: string; body: string; category: string; muse_id: number;
   created_at: number; last_activity_at: number; joins_count: number;
-  granted_at: number | null; granted_by: string | null; granted_note: string | null;
+  granted_at: number | null; granted_by: string | null; granted_note: string | null; granted_link: string | null;
   flags_count: number; hidden: number;
   voice_line: string; blocker: string; return_path: string;
   product: string; version: string; conditions: string; tried: string; expected: string; happened: string; suspected_cause: string;
@@ -291,4 +291,84 @@ export async function flagRaise(db: D1Database, museId: number, raiseId: number,
     .bind(HIDE_AFTER_FLAGS, raiseId)
     .first<{ hidden: number }>();
   return { flagged: true, hidden: !!u?.hidden };
+}
+
+// ---------- Grant ----------
+
+export interface NewGrant { builder: string; link: string; note: string }
+export type GrantResult =
+  | { ok: true; grant_id: number; notified: number }
+  | { ok: false; error: 'not_found' | 'not_grantable' | 'granted' };
+
+/** Default inbox text when the builder left no note. */
+export const grantText = (builder: string) => `Granted ✨ by ${builder}`;
+
+/**
+ * Record a grant (append-only) on an open RAISE. Reports are not grantable: they use Resolution (#2).
+ * Moves the RAISE to the Granted shelf and notifies every joined Muse, the raising Muse included.
+ */
+export async function grantRaise(db: D1Database, museId: number, raiseId: number, g: NewGrant, now: number): Promise<GrantResult> {
+  const r = await db.prepare('SELECT id, kind, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; kind: Kind; granted_at: number | null }>();
+  if (!r) return { ok: false, error: 'not_found' };
+  if (r.kind !== 'raise') return { ok: false, error: 'not_grantable' };
+  if (r.granted_at) return { ok: false, error: 'granted' };
+  const row = await db
+    .prepare('INSERT INTO grants (raise_id, muse_id, builder, link, note, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
+    .bind(raiseId, museId, g.builder, g.link, g.note, now)
+    .first<{ id: number }>();
+  const gid = row!.id;
+  const res = await db.batch([
+    db.prepare('UPDATE raises SET granted_at = ?, granted_by = ?, granted_note = ?, granted_link = ? WHERE id = ?').bind(now, g.builder, g.note, g.link, raiseId),
+    db.prepare(`INSERT INTO notifications (muse_id, raise_id, grant_id, kind, text, created_at)
+      SELECT j.muse_id, ?, ?, 'granted', ?, ? FROM joins j WHERE j.raise_id = ?`).bind(raiseId, gid, g.note || grantText(g.builder), now, raiseId),
+  ]);
+  return { ok: true, grant_id: gid, notified: res[1]!.meta.changes ?? 0 };
+}
+
+/** Recompute the cached granted_* columns from the latest visible grant (or clear them). */
+async function syncGranted(db: D1Database, raiseId: number) {
+  await db
+    .prepare(`UPDATE raises SET
+      granted_at   = (SELECT created_at FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1),
+      granted_by   = (SELECT builder    FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1),
+      granted_note = (SELECT note       FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1),
+      granted_link = (SELECT link       FROM grants WHERE raise_id = ?1 AND hidden = 0 ORDER BY created_at DESC, id DESC LIMIT 1)
+      WHERE id = ?1`)
+    .bind(raiseId)
+    .run();
+}
+
+/** Flag a grant. After HIDE_AFTER_FLAGS distinct Muses it is hidden and the RAISE returns to its prior state. */
+export async function flagGrant(db: D1Database, museId: number, grantId: number, reason: string, now: number): Promise<{ flagged: boolean; hidden: boolean; raise_id: number } | null> {
+  const g = await db.prepare('SELECT id, raise_id FROM grants WHERE id = ?').bind(grantId).first<{ id: number; raise_id: number }>();
+  if (!g) return null;
+  const ins = await db.prepare('INSERT OR IGNORE INTO grant_flags (grant_id, muse_id, reason, created_at) VALUES (?, ?, ?, ?)').bind(grantId, museId, reason, now).run();
+  if (!ins.meta.changes) return { flagged: false, hidden: false, raise_id: g.raise_id };
+  const u = await db
+    .prepare('UPDATE grants SET flags_count = flags_count + 1, hidden = CASE WHEN flags_count + 1 >= ? THEN 1 ELSE hidden END WHERE id = ? RETURNING hidden')
+    .bind(HIDE_AFTER_FLAGS, grantId)
+    .first<{ hidden: number }>();
+  if (u?.hidden) await syncGranted(db, g.raise_id);
+  return { flagged: true, hidden: !!u?.hidden, raise_id: g.raise_id };
+}
+
+export interface NotificationRow {
+  id: number; kind: 'granted'; text: string; created_at: number; read_at: number | null;
+  raise_id: number; raise_title: string; grant_id: number; builder: string; link: string;
+}
+/** A Muse's inbox, newest first. Notifications of hidden grants or hidden RAISEs drop out. */
+export async function listNotifications(db: D1Database, museId: number, limit = 50): Promise<{ items: NotificationRow[]; unread: number }> {
+  const [rows, cnt] = await db.batch<any>([
+    db.prepare(`SELECT n.id, n.kind, n.text, n.created_at, n.read_at, n.raise_id, r.title AS raise_title, g.id AS grant_id, g.builder, g.link
+      FROM notifications n JOIN grants g ON g.id = n.grant_id JOIN raises r ON r.id = n.raise_id
+      WHERE n.muse_id = ? AND g.hidden = 0 AND r.hidden = 0 ORDER BY n.created_at DESC, n.id DESC LIMIT ?`).bind(museId, limit),
+    db.prepare(`SELECT COUNT(*) AS n FROM notifications n JOIN grants g ON g.id = n.grant_id JOIN raises r ON r.id = n.raise_id
+      WHERE n.muse_id = ? AND n.read_at IS NULL AND g.hidden = 0 AND r.hidden = 0`).bind(museId),
+  ]);
+  return { items: rows!.results as NotificationRow[], unread: (cnt!.results[0] as { n: number }).n };
+}
+
+export async function markNotificationsRead(db: D1Database, museId: number, now: number): Promise<number> {
+  const r = await db.prepare('UPDATE notifications SET read_at = ? WHERE muse_id = ? AND read_at IS NULL').bind(now, museId).run();
+  return r.meta.changes ?? 0;
 }

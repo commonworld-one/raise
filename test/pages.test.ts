@@ -25,6 +25,8 @@ describe('pages', () => {
   it('demo landing has browse link and live counter', async () => {
     const t = await (await get('/demo')).text();
     expect(t).toContain('Browse every page with demo data');
+    expect(t).toContain('Wingsmith grants it');
+    expect(t).toContain('You can fly now');
     expect(t).toContain('1,240');
   });
   it('/leaderboard -> 301 /corporation', async () => {
@@ -41,10 +43,11 @@ describe('pages', () => {
   });
   it('demo RAISE page shows fantasy content and sorting chips', async () => {
     const t = await (await get('/demo/raises?sort=top&active=all')).text();
-    expect(t).toContain('Wings to fly to the Moon');
+    expect(t).toContain('Teleport to grandma');
     expect(t).toContain('Talk to my dog');
+    expect(t).not.toContain('Wings to fly to the Moon'); // granted: on the shelf, not in the open list
     expect(t).toContain('noindex,follow');
-    expect(t.indexOf('Talk to my dog')).toBeLessThan(t.indexOf('Wings to fly to the Moon')); // top = 3,120 before 1,240
+    expect(t.indexOf('Talk to my dog')).toBeLessThan(t.indexOf('Teleport to grandma')); // top = 3,120 before 2,210
   });
   it('reports show Active / Quiet with the latest occurrence date (#2)', async () => {
     const t = await (await get('/demo/reports?active=all')).text();
@@ -67,6 +70,12 @@ describe('pages', () => {
   it('granted shelf (demo)', async () => {
     const t = await (await get('/demo/granted')).text();
     expect(t).toContain('Understand what my cat is saying');
+    expect(t).toContain('Wings to fly to the Moon');
+    expect(t).toContain('Granted ✨ by Wingsmith');
+    const d = await (await get('/demo/r/0418')).text();
+    expect(d).toContain('Granted ✨ by Wingsmith');
+    expect(d).toContain('href="https://example.org/wingsmith"');
+    expect(d).toContain('You can fly now');
   });
   it('public text rules', async () => {
     for (const p of ['/', '/about', '/connect', '/demo', '/demo/']) {

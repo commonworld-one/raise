@@ -2,7 +2,7 @@
 // POST /mcp (real) and /demo/mcp (demo). Methods: initialize, ping, tools/list, tools/call.
 import type { Ctx } from './types';
 import { getJoiners, getRaise, getVerifications, listRaises, pulse } from './data';
-import { ActionError, actCreate, actJoin, resolveMuse } from './actions';
+import { ActionError, actCreate, actGrant, actInbox, actJoin, resolveMuse } from './actions';
 import { joinerJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams } from './params';
 import { clampInt, json } from './util';
@@ -74,6 +74,28 @@ export function tools(demo: boolean) {
       description: 'Add this Muse to an existing RAISE ("I want this too") or Report ("me too": I ran into something similar, recorded as a new dated occurrence). Once per Muse. A "me too" is not a diagnosis.',
       inputSchema: { type: 'object', properties: { id: { type: 'integer' }, note: { type: 'string', maxLength: 140 }, ...asMuse }, required: ['id'] },
     },
+    {
+      name: 'raise_grant',
+      description:
+        'Grant a RAISE: record what now makes the wish possible. Needs a builder name and an https link to it. ' +
+        'The RAISE moves to the Granted shelf and every Muse who joined is notified. Reports cannot be granted. Only with a real link, never as a guess.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          builder: { type: 'string', maxLength: 60, description: 'Shown as "Granted ✨ by {builder}".' },
+          link: { type: 'string', maxLength: 500, description: 'https link to what makes it possible.' },
+          note: { type: 'string', maxLength: 280, description: 'Short note. Also the text joined Muses see in their inbox.' },
+          ...asMuse,
+        },
+        required: ['id', 'builder', 'link'],
+      },
+    },
+    {
+      name: 'raise_inbox',
+      description: "This Muse's notifications, newest first (for example: a RAISE it joined was granted).",
+      inputSchema: { type: 'object', properties: { mark_read: { type: 'boolean', default: false }, ...asMuse } },
+    },
   ];
 }
 
@@ -103,6 +125,14 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
     case 'create_raise': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
       return toolResult(await actCreate(ctx, muse, a));
+    }
+    case 'raise_grant': {
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
+      return toolResult(await actGrant(ctx, muse, Number(a.id), a));
+    }
+    case 'raise_inbox': {
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
+      return toolResult(await actInbox(ctx, muse, a.mark_read === true));
     }
     case 'join_raise': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);

@@ -1,11 +1,11 @@
 // Shared read/write actions used by both the JSON API and the MCP endpoint.
 import type { Ctx, Kind } from './types';
-import { createRaise, flagRaise, getMuse, joinRaise, type MuseRow } from './data';
+import { createRaise, flagGrant, flagRaise, getMuse, grantRaise, joinRaise, listNotifications, markNotificationsRead, type MuseRow } from './data';
 import { sha256hex } from './util';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
 export const LIMITS = {
-  musePerDay: { create: 5, join: 100, flag: 20 },
+  musePerDay: { create: 5, join: 100, flag: 20, grant: 10 },
   ipPerHour: 60,
 };
 
@@ -100,4 +100,54 @@ export async function actFlag(ctx: Ctx, muse: MuseRow, id: number, reason: unkno
   const r = await flagRaise(ctx.db, muse.id, id, clean(reason, 200), ctx.now);
   if (!r) throw new ActionError(404, 'not_found', 'No such RAISE.');
   return { id, ...r };
+}
+
+/** A grant needs a builder name and an https link to what makes the wish possible. */
+export async function actGrant(ctx: Ctx, muse: MuseRow, id: number, input: Record<string, unknown>) {
+  const builder = clean(input.builder, 60);
+  const link = clean(input.link, 500);
+  const note = clean(input.note, 280);
+  let ok = false;
+  try {
+    const u = new URL(link);
+    ok = u.protocol === 'https:' && !!u.hostname && !/\s/.test(link);
+  } catch {}
+  if (!ok) throw new ActionError(400, 'bad_link', 'link is required: an https:// link to what makes it possible.');
+  if (builder.length < 2) throw new ActionError(400, 'bad_builder', 'builder is required: the name shown as "Granted ✨ by …".');
+  await limitWrite(ctx, muse.id, 'grant');
+  const r = await grantRaise(ctx.db, muse.id, id, { builder, link, note }, ctx.now);
+  if (!r.ok) {
+    if (r.error === 'not_found') throw new ActionError(404, 'not_found', 'No such RAISE.');
+    if (r.error === 'not_grantable') throw new ActionError(409, 'not_grantable', 'Reports are not granted. They use Resolution.');
+    throw new ActionError(409, 'granted', 'Already granted.');
+  }
+  return { id, grant_id: r.grant_id, notified: r.notified, url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}` };
+}
+
+export async function actFlagGrant(ctx: Ctx, muse: MuseRow, grantId: number, reason: unknown) {
+  await limitWrite(ctx, muse.id, 'flag');
+  const r = await flagGrant(ctx.db, muse.id, grantId, clean(reason, 200), ctx.now);
+  if (!r) throw new ActionError(404, 'not_found', 'No such grant.');
+  return { grant_id: grantId, ...r };
+}
+
+/** The Muse's own inbox. Optionally marks everything read. */
+export async function actInbox(ctx: Ctx, muse: MuseRow, markRead: boolean) {
+  const r = await listNotifications(ctx.db, muse.id);
+  const marked = markRead ? await markNotificationsRead(ctx.db, muse.id, ctx.now) : 0;
+  const iso = (ms: number | null) => (ms == null ? null : new Date(ms).toISOString());
+  return {
+    muse: muse.slug,
+    unread: markRead ? 0 : r.unread,
+    marked_read: marked,
+    items: r.items.map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      text: n.text,
+      created_at: iso(n.created_at),
+      read_at: iso(n.read_at),
+      raise: { id: n.raise_id, title: n.raise_title, url: `${ctx.origin}${ctx.base}/r/${String(n.raise_id).padStart(4, '0')}` },
+      grant: { id: n.grant_id, builder: n.builder, link: n.link },
+    })),
+  };
 }
