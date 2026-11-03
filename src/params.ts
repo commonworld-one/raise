@@ -16,7 +16,7 @@ export function listParams(src: Record<string, unknown>, kind?: Kind): ListParam
     active: pick<Active>(s('active'), ACTIVES, '7d'),
     category: s('type') || s('category') || undefined,
     client: CLIENTS.includes(s('from') as any) ? s('from') : undefined,
-    state: state === 'live' || state === 'quiet' ? state : undefined,
+    state: state === 'active' || state === 'quiet' ? state : undefined,
     q: (s('q') || '').slice(0, 100) || undefined,
   };
 }

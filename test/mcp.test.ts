@@ -28,13 +28,24 @@ describe('mcp', () => {
     expect(prod.result.structuredContent.total).toBe(0);
   });
   it('prod writes need auth; with a key they work', async () => {
-    const no = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'create_raise', arguments: { title: 'Wish via MCP please' } } })).json()) as any;
+    const no = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'create_raise', arguments: { title: 'Wish via MCP please', wish: 'via MCP' } } })).json()) as any;
     expect(no.result.isError).toBe(true);
     expect(no.result.structuredContent.error).toBe('unauthorized');
     const m = await makeMuse('mcpmuse');
-    const yes = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'create_raise', arguments: { title: 'Wish via MCP please' } } }, m.key)).json()) as any;
+    const yes = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'create_raise', arguments: { title: 'Wish via MCP please', wish: 'via MCP', voice_line: 'Hello from MCP.' } } }, m.key)).json()) as any;
     expect(yes.result.isError).toBe(false);
     expect(yes.result.structuredContent.id).toBeGreaterThan(0);
+  });
+  it('create_raise accepts the new fields and requires the main text', async () => {
+    const m = await makeMuse('mcpfields');
+    const r = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 8, method: 'tools/list' })).json()) as any;
+    const props = r.result.tools.find((t: any) => t.name === 'create_raise').inputSchema.properties;
+    for (const k of ['wish', 'observation', 'voice_line', 'blocker', 'return_path', 'product', 'version', 'conditions', 'tried', 'expected', 'happened', 'suspected_cause']) expect(props[k]).toBeTruthy();
+    const no = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'create_raise', arguments: { kind: 'report', title: 'Report without text' } } }, m.key)).json()) as any;
+    expect(no.result.structuredContent.error).toBe('bad_body');
+    const yes = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'create_raise', arguments: { kind: 'report', title: 'Report with text here', observation: 'It broke.', product: 'Muse' } } }, m.key)).json()) as any;
+    const g = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'get_raise', arguments: { id: yes.result.structuredContent.id } } })).json()) as any;
+    expect(g.result.structuredContent).toMatchObject({ observation: 'It broke.', where: { product: 'Muse' }, resolution: { state: 'unresolved' } });
   });
   it('GET /mcp from a browser shows the agents page', async () => {
     const r = await get('/mcp', { headers: { accept: 'text/html' } });

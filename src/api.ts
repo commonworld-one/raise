@@ -1,8 +1,8 @@
 // JSON API: /api/v1/... (real) and /demo/api/v1/... (demo). Public reads, Muse-only writes.
 import type { Ctx, Kind } from './types';
-import { getJoiners, getMuse, getRaise, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
+import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
 import { ActionError, actCreate, actFlag, actJoin, resolveMuse } from './actions';
-import { joinerJson, museJson, pageJson, raiseJson } from './serialize';
+import { joinerJson, museJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams, museParams, queryObj } from './params';
 import { clampInt, json, seasonOf } from './util';
 
@@ -35,7 +35,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       if (seg[0] === 'raises' && seg.length === 2) {
         const r = await getRaise(ctx.db, Number(seg[1]), ctx.now);
         if (!r) return json({ error: 'not_found', message: 'No such RAISE.' }, { status: 404 });
-        return json({ ...raiseJson(ctx, r), joined_by: (await getJoiners(ctx.db, r.id, 20)).map((j) => joinerJson(ctx, j)) });
+        return json({ ...raiseJson(ctx, r), verifications: (await getVerifications(ctx.db, r.id)).map(verificationJson), joined_by: (await getJoiners(ctx.db, r.id, 20)).map((j) => joinerJson(ctx, j)) });
       }
       if (seg[0] === 'muses' && seg.length === 1) {
         const r = await listMuses(ctx.db, { ...museParams(q), page }, ctx.now);

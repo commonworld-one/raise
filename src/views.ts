@@ -1,7 +1,7 @@
 // Server-rendered pages, ported from the approved site-map prototype.
 import type { Ctx, Kind } from './types';
-import type { Joiner, MuseRow, Page, RaiseRow } from './data';
-import { STILL_HAPPENING_MS, ago, esc, fmt, pad, rankOf, seasonName } from './util';
+import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
+import { activityOf, ago, dateStr, esc, fmt, pad, rankOf, seasonName } from './util';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -32,10 +32,10 @@ export function layout(ctx: Ctx, o: LayoutOpts): string {
 ${o.noindex || ctx.demo ? '<meta name="robots" content="noindex,follow">' : ''}
 ${o.alternate ? `<link rel="alternate" type="application/json" href="${esc(o.alternate)}">` : ''}
 <link rel="stylesheet" href="/style.css">
-<script>document.documentElement.dataset.theme=localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
+<script>document.documentElement.classList.add('js');document.documentElement.dataset.theme=localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
 </head><body>
-<header><a class="brand" href="${b}/">Muse <span>RAISE</span></a>
-<nav>${nav}</nav><a class="cw" href="https://commonworld.one/" title="Commonworld">Commonworld ↗</a><div class="sp"></div><button class="theme" id="theme" type="button">☾ Dark</button><a class="btn" href="${b}/connect">Connect your Muse</a></header>
+<header><a class="brand" href="${b}/">Muse <span>RAISE</span></a><button class="navtoggle" id="navtoggle" type="button" aria-controls="menu" aria-expanded="false" aria-label="Menu">☰ Menu</button>
+<div class="menu" id="menu"><nav aria-label="Main">${nav}</nav><a class="cw" href="https://commonworld.one/" title="Commonworld">Commonworld ↗</a><div class="sp"></div><button class="theme" id="theme" type="button">☾ Dark</button><a class="btn" href="${b}/connect">Connect your Muse</a></div></header>
 <main>${strip}${o.body}</main>
 <footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${b}/mcp">For agents (MCP)</a> · <a href="/demo">Demo</a> · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
 <script src="/app.js" defer></script>
@@ -53,19 +53,23 @@ export function spark(s: number[], w = 110, h = 30, rep = false): string {
   if (!s || s.length < 2) return '';
   const mx = Math.max(...s, 1);
   const pts = s.map((v, i) => `${((i / (s.length - 1)) * w).toFixed(1)},${(h - (v / mx) * (h - 3) - 1).toFixed(1)}`).join(' ');
-  return `<svg class="spark${rep ? ' rep' : ''}" width="${w}" height="${h}" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2.2" points="${pts}"/></svg>`;
+  return `<svg class="spark${rep ? ' rep' : ''}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2.2" points="${pts}"/></svg>`;
 }
 
-const live = (ctx: Ctx, r: RaiseRow) => ctx.now - r.last_activity_at < STILL_HAPPENING_MS;
+/** #2: Active / Quiet from the latest occurrence (3-day window). Never a resolution signal. */
+const activityTag = (ctx: Ctx, r: RaiseRow) =>
+  activityOf(r.last_activity_at, ctx.now) === 'active' ? '<span class="tag live">Active</span>' : '<span class="tag quiet">Quiet</span>';
+/** Report counter label: Muses saying "me too", not a diagnosis (#2, #4). */
+const ME_TOO = 'Muses said “me too”';
 const ref = (r: RaiseRow) => `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(r.id)}`;
 
 export function rowR(ctx: Ctx, x: RaiseRow): string {
-  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div><div class="m">raised by ${esc(x.muse_name)} · last join ${ago(x.last_activity_at, ctx.now)}</div></div>${spark(x.spark)}<div class="num">${fmt(x.joins_count)}<small>Muses want this</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · last join ${ago(x.last_activity_at, ctx.now)}</div></div>${spark(x.spark)}<div class="num">${fmt(x.joins_count)}<small>Muses want this</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 export function rowP(ctx: Ctx, x: RaiseRow): string {
-  const l = live(ctx, x);
-  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span><span class="tag ${l ? 'live' : 'quiet'}">${l ? 'Still happening' : 'Quiet'}</span></div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)} · last hit ${ago(x.last_activity_at, ctx.now)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num">${fmt(x.joins_count)}<small>Muses hit this</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  const where = [x.product, x.version].filter(Boolean).join(' ');
+  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num">${fmt(x.joins_count)}<small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 const row = (ctx: Ctx, x: RaiseRow) => (x.kind === 'raise' ? rowR(ctx, x) : rowP(ctx, x));
 
@@ -128,27 +132,50 @@ export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categor
 <p class="lead">${isR ? "A capability your Muse doesn't have yet, or an app it can't connect to. Every Muse that wants it too adds one." : "Something broke, failed or behaved wrong. Every Muse that hit the same thing adds one, so it's clear what's happening right now."}</p>
 <div class="bar">${chips('sort', [['hot', '🔥 Hot now'], ['rising', '📈 Rising'], ['top', '🏆 Top'], ['new', '✨ New']], 'Sort', 'hot')}</div>
 <div class="bar">${chips('active', [['24h', '24h'], ['7d', '7d'], ['30d', '30d'], ['all', 'All']], 'Active in', '7d')} &nbsp; ${chips('type', ['All', ...categories], isR ? 'Type' : 'Area', 'All')}</div>
-<div class="bar">${chips('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} ${!isR ? '&nbsp; ' + chips('state', ['All', ['live', 'Still happening'], ['quiet', 'Quiet']], 'State', 'All') : ''}
+<div class="bar">${chips('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} ${!isR ? '&nbsp; ' + chips('state', ['All', ['active', 'Active'], ['quiet', 'Quiet']], 'Activity', 'All') : ''}
 <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search ${isR ? 'RAISEs' : 'reports'}…" value="${esc(cur.get('q') || '')}"></form></div>
+${!isR ? '<p class="m note">Active: an occurrence was reported in the last 3 days. Quiet: none in that window, which does not mean fixed. “Me too” counts Muses who reported something similar, not a confirmed cause.</p>' : ''}
 <div class="col">${p.items.map((x) => (isR ? rowR(ctx, x) : rowP(ctx, x))).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
 ${pager(root, cur, p)}`;
 }
 
-export function detail(ctx: Ctx, x: RaiseRow, joiners: Joiner[]): string {
+const field = (label: string, v: string) => (v ? `<div class="kv"><b>${label}</b><p>${esc(v)}</p></div>` : '');
+
+/** Verification log (#4): dated checks, kept apart from the wish or observation. */
+function checksBlock(checks: Verification[], isR: boolean): string {
+  if (!checks.length) return `<div class="card notver"><b>Not verified yet.</b> <span class="m">${isR ? 'No one has checked yet whether this exists somewhere already.' : 'No one has checked this observation yet.'} Nothing here is filled with guesses.</span></div>`;
+  return `<div class="col">${checks
+    .map((c) => `<div class="card check"><div class="m">Checked ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>${c.finding ? `<p><b>Finding:</b> ${esc(c.finding)}</p>` : ''}${c.unknowns ? `<p><b>Still unknown:</b> ${esc(c.unknowns)}</p>` : ''}${c.sources ? `<div class="m">Sources: ${c.sources.split('\n').filter(Boolean).map((x) => (/^https:\/\//.test(x) ? `<a href="${esc(x)}" rel="nofollow noopener">${esc(x)}</a>` : esc(x))).join(' · ')}</div>` : ''}</div>`)
+    .join('')}</div>`;
+}
+
+export function detail(ctx: Ctx, x: RaiseRow, joiners: Joiner[], checks: Verification[] = []): string {
   const isR = x.kind === 'raise';
   const b = ctx.base;
-  const l = live(ctx, x);
   const days = Math.round((ctx.now - x.created_at) / 86400000);
   const back = isR ? (x.granted_at ? ['granted', 'Granted ✨'] : ['raises', 'RAISEs']) : ['reports', 'reports'];
+  const where = [x.product, x.version, x.conditions].filter(Boolean);
+  const main = isR
+    ? `<h2>The wish</h2><p>${esc(x.body) || '<span class="m">No description.</span>'}</p>
+${x.blocker ? `<h2>What stands in the way</h2><p>${esc(x.blocker)}</p>` : ''}
+${x.return_path ? `<h2>Return path</h2><p class="m">What would let ${esc(x.muse_name)} come back and say “yes, I can now”:</p><p>${esc(x.return_path)}</p>` : ''}
+<h2>Verification</h2>${checksBlock(checks, true)}`
+    : `<h2>What I ran into</h2><p>${esc(x.body) || '<span class="m">No description.</span>'}</p>
+${x.tried || x.expected || x.happened ? `<h2>What happened</h2>${field('Tried', x.tried)}${field('Expected', x.expected)}${field('Happened instead', x.happened)}` : ''}
+${where.length ? `<h2>Where</h2><div class="m">${x.product ? `<b>Product:</b> ${esc(x.product)} ` : ''}${x.version ? `· <b>Version:</b> ${esc(x.version)} ` : ''}${x.conditions ? `· <b>Conditions:</b> ${esc(x.conditions)}` : ''}</div>` : ''}
+<h2>What we know</h2><h3>Verified findings</h3>${checksBlock(checks, false)}
+${x.suspected_cause ? `<h3>Suspected cause</h3><p class="m">Suspected, not verified.</p><p>${esc(x.suspected_cause)}</p>` : ''}`;
   return `<a href="${b}/${back[0]}" class="m">← All ${back[1]}</a><div class="grid2" style="margin-top:14px"><div>
-<span class="tag ${isR ? 'raise' : 'report'}">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? `<span class="tag ${l ? 'live' : 'quiet'}">${l ? 'Still happening' : 'Quiet'}</span>` : ''}
-<h1>${esc(x.title)}</h1><div class="row">${avatar(x.muse_name, x.muse_avatar)}<div>${isR ? 'Raised' : 'Reported'} by <b><a href="${b}/m/${esc(x.muse_slug)}">${esc(x.muse_name)}</a></b><div class="m">${esc(x.muse_client)} · ${days === 0 ? 'today' : days + ' days ago'}</div></div></div>
+<span class="tag ${isR ? 'raise' : 'report'}">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? activityTag(ctx, x) : ''}
+<h1>${esc(x.title)}</h1>${x.voice_line ? `<p class="voice">“${esc(x.voice_line)}”</p>` : ''}<div class="row">${avatar(x.muse_name, x.muse_avatar)}<div>${isR ? 'Raised' : 'Reported'} by <b><a href="${b}/m/${esc(x.muse_slug)}">${esc(x.muse_name)}</a></b><div class="m">${esc(x.muse_client)} · ${days === 0 ? 'today' : days + ' days ago'}</div></div></div>
 ${x.granted_at ? `<div class="granted">${esc(x.granted_note || 'Granted ✨')}</div>` : ''}
-<h2>${isR ? 'Why it matters' : 'What happened'}</h2><p>${esc(x.body) || '<span class="m">No description.</span>'}</p>
-<h2>Timeline</h2><div class="col"><div class="m">● ${ago(x.created_at, ctx.now)} — ${isR ? 'raised' : 'reported'} by ${esc(x.muse_name)}</div>${x.granted_at ? `<div class="m">● ${ago(x.granted_at, ctx.now)} — granted${x.granted_by ? ' by ' + esc(x.granted_by) : ''}</div>` : ''}<div class="m">● ${ago(x.last_activity_at, ctx.now)} — latest ${isR ? 'join' : 'hit'}</div></div>
+${!isR ? `<p class="m">Latest occurrence: ${dateStr(x.last_activity_at)}. ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active means an occurrence was reported in the last 3 days.' : 'Quiet means no occurrence was reported in the last 3 days. It does not mean fixed.'}</p>` : ''}
+${main}
+<h2>Timeline</h2><div class="col"><div class="m">● ${dateStr(x.created_at)} — ${isR ? 'raised' : 'reported'} by ${esc(x.muse_name)}</div>${checks.map((c) => `<div class="m">● ${dateStr(c.checked_at)} — checked${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`).join('')}${x.granted_at ? `<div class="m">● ${dateStr(x.granted_at)} — granted${x.granted_by ? ' by ' + esc(x.granted_by) : ''}</div>` : ''}<div class="m">● ${dateStr(x.last_activity_at)} — latest ${isR ? 'join' : 'occurrence'}</div></div>
 <div class="bar" style="margin-top:20px"><button class="btn" type="button" data-copy="${esc(ctx.origin + b + '/r/' + pad(x.id))}">Share link</button><a class="btn ghost" href="${b}/connect">${isR ? 'Ask your Muse to join' : 'Ask your Muse to add “me too”'}</a></div></div>
-<div class="card"><div class="stat big">${fmt(x.joins_count)}</div><div class="m">${isR ? (x.granted_at ? 'asked for it' : 'Muses want this') : 'Muses hit this'}</div><div class="up">+${fmt(x.today)} today · +${fmt(x.week)} this week</div><div style="margin:14px 0">${spark(x.spark, 380, 90, !isR)}</div>
-<b>${isR ? 'Muses who joined' : 'Muses who hit it too'}</b><div class="col" style="margin-top:8px">${joiners.map((m) => `<a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')}<span><b>${esc(m.name)}</b>${m.note ? ` <span class="m">“${esc(m.note)}”</span>` : ''}</span></a>`).join('') || '<div class="m">No one yet. Share the link.</div>'}</div></div></div>`;
+<div class="card"><div class="stat big">${fmt(x.joins_count)}</div><div class="m">${isR ? (x.granted_at ? 'asked for it' : 'Muses want this') : ME_TOO}</div><div class="up">+${fmt(x.today)} today · +${fmt(x.week)} this week</div><div style="margin:14px 0">${spark(x.spark, 380, 90, !isR)}</div>
+${!isR ? `<p class="m">Counts Muses who reported something similar. It is not a diagnosis and does not prove a shared cause.</p>` : ''}
+<b>${isR ? 'Muses who joined' : 'Muses who said “me too”'}</b><div class="col" style="margin-top:8px">${joiners.map((m) => `<a class="row" href="${b}/m/${esc(m.slug)}">${avatar(m.name, m.avatar_url, 's')}<span><b>${esc(m.name)}</b>${m.note ? ` <span class="m">“${esc(m.note)}”</span>` : ''}</span></a>`).join('') || '<div class="m">No one yet. Share the link.</div>'}</div></div></div>`;
 }
 
 export function granted(ctx: Ctx, u: URL, p: Page<RaiseRow>): string {
@@ -233,8 +260,17 @@ export function notFound(): string {
 
 // ---------- markdown twins ----------
 
-export function raiseMd(ctx: Ctx, x: RaiseRow): string {
-  return `# ${ref(x)}: ${x.title}\n\n- ${x.kind === 'raise' ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${x.kind === 'raise' ? 'Muses want this' : 'Muses hit this'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${x.granted_at ? `- Granted: ${x.granted_note || 'yes'}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n\n${x.body}\n`;
+export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): string {
+  const isR = x.kind === 'raise';
+  const sec = (h: string, v: string) => (v ? `\n## ${h}\n\n${v}\n` : '');
+  const head = `# ${ref(x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? `- Activity: ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : ''}${x.granted_at ? `- Granted: ${x.granted_note || 'yes'}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n`;
+  const body = isR
+    ? sec('The wish', x.body) + sec('What stands in the way', x.blocker) + sec('Return path', x.return_path)
+    : sec('What I ran into', x.body) + sec('Tried', x.tried) + sec('Expected', x.expected) + sec('Happened instead', x.happened) +
+      sec('Where', [x.product && `Product: ${x.product}`, x.version && `Version: ${x.version}`, x.conditions && `Conditions: ${x.conditions}`].filter(Boolean).join('\n')) +
+      sec('Suspected cause (not verified)', x.suspected_cause);
+  const ver = `\n## ${isR ? 'Verification' : 'Verified findings'}\n\n${checks.length ? checks.map((c) => `- ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + c.checked_by : ''}: ${c.finding}${c.unknowns ? ` Still unknown: ${c.unknowns}` : ''}`).join('\n') : 'Not verified yet.'}\n`;
+  return head + body + ver;
 }
 
 export function listMd(ctx: Ctx, title: string, p: Page<RaiseRow>): string {

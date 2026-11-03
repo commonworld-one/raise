@@ -61,4 +61,23 @@ footer{border-top:1px solid var(--line);padding:24px 28px;color:var(--mute);font
 form.inline{display:inline}
 .granted{display:inline-block;background:var(--t-live-bg);color:var(--t-live);border-radius:10px;padding:6px 12px;font-weight:600;font-size:13.5px;margin:8px 0}
 .phone .bub,.phone .mini{transition:opacity .4s}.phone .hide{opacity:0}
-@media (max-width:860px){header{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}.cw{display:none}.grid2,.grid3{grid-template-columns:1fr}.item .spark{display:none}.num{min-width:70px}.parade img{width:64px;height:64px}main{padding:24px 16px}.band{flex-direction:column;text-align:center}}
+/* #4 formats */
+.voice{font-size:18px;font-style:italic;color:var(--mute);margin:-4px 0 14px}.voice-s{font-style:italic}
+.kv b{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}.kv p{margin:2px 0 12px}
+.notver{background:var(--surface)}.check p{margin:6px 0}.note{max-width:760px}
+/* #3 mobile: header menu collapses, nothing overflows at 390 px */
+.menu{display:contents}.navtoggle{display:none}
+img,svg{max-width:100%}main{overflow-wrap:break-word}.item>div{min-width:0}
+.tablewrap{overflow-x:auto}
+@media (max-width:860px){header{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}.cw{display:none}.grid2,.grid3{grid-template-columns:1fr}.item .spark{display:none}.num{min-width:70px}.parade img{width:64px;height:64px}main{padding:24px 16px}.band{flex-direction:column;text-align:center}
+.brand{flex:1}.navtoggle{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;height:40px;padding:0 14px;font:600 13px "DM Sans";cursor:pointer}
+html:not(.js) .navtoggle{display:none}
+.menu{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%}.menu .sp{display:none}
+.js header:not(.open) .menu{display:none}
+nav{flex-direction:column;gap:2px}nav a{padding:10px 12px;font-size:15px}
+html:not(.js) nav{flex-direction:row;flex-wrap:nowrap;overflow-x:auto}html:not(.js) nav a{white-space:nowrap}
+.menu .theme,.menu .btn{align-self:flex-start}
+.parade{flex-wrap:wrap}input.q{min-width:0;width:100%}form.inline{display:block;width:100%}
+.phone{width:100%;max-width:300px}.av.xl{width:96px;height:96px}
+table{display:block;overflow-x:auto}}
+@media (max-width:420px){.parade img{width:48px;height:48px}.item{gap:10px;padding:12px}.num{min-width:58px;font-size:18px}h1{font-size:34px}.big{font-size:48px}}

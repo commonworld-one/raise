@@ -1,6 +1,10 @@
 export const PER_PAGE = 50;
 export const DAY_MS = 86_400_000;
-export const STILL_HAPPENING_MS = 3 * DAY_MS;
+/** Activity window (#2): a Report is Active when an occurrence was reported within it, else Quiet. Time never changes Resolution. */
+export const ACTIVE_WINDOW_MS = 3 * DAY_MS;
+export const activityOf = (lastOccurrence: number, now: number): 'active' | 'quiet' => (now - lastOccurrence < ACTIVE_WINDOW_MS ? 'active' : 'quiet');
+/** Date as shown on pages, e.g. "Nov 3, 2026" (UTC). */
+export const dateStr = (ms: number): string => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 export const esc = (s: unknown): string =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

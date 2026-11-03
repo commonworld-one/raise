@@ -33,7 +33,7 @@ describe('writes', () => {
   it('join updates the stored counter once per Muse', async () => {
     const a = await makeMuse('author');
     const b = await makeMuse('joiner');
-    const c = (await (await post('/api/v1/raises', { title: 'Counter test wish please' }, a.key)).json()) as any;
+    const c = (await (await post('/api/v1/raises', { title: 'Counter test wish please', wish: 'A counter that counts.' }, a.key)).json()) as any;
     let d = (await (await get(`/api/v1/raises/${c.id}`)).json()) as any;
     expect(d.joins_count).toBe(1); // the raising Muse counts
     const j1 = (await (await post(`/api/v1/raises/${c.id}/join`, { note: 'same here' }, b.key)).json()) as any;
@@ -57,20 +57,20 @@ describe('writes', () => {
     const m = await makeMuse('capped');
     const codes: number[] = [];
     for (let i = 0; i <= LIMITS.musePerDay.create; i++)
-      codes.push((await post('/api/v1/raises', { title: `Cap test number ${i} here` }, m.key, `10.1.0.${i}`)).status);
+      codes.push((await post('/api/v1/raises', { title: `Cap test number ${i} here`, wish: 'cap' }, m.key, `10.1.0.${i}`)).status);
     expect(codes.slice(0, LIMITS.musePerDay.create).every((c) => c === 201)).toBe(true);
     expect(codes[LIMITS.musePerDay.create]).toBe(429);
   });
   it('per-IP hourly write ceiling', async () => {
     const m = await makeMuse('ipheavy');
-    const t = (await (await post('/api/v1/raises', { title: 'IP limit target wish' }, m.key, '10.2.2.2')).json()) as any;
+    const t = (await (await post('/api/v1/raises', { title: 'IP limit target wish', wish: 'ip' }, m.key, '10.2.2.2')).json()) as any;
     let last = 0;
     for (let i = 0; i < LIMITS.ipPerHour + 1; i++) last = (await post(`/api/v1/raises/${t.id}/join`, {}, m.key, '10.2.2.2')).status;
     expect(last).toBe(429);
   });
   it('flags hide a RAISE after the threshold', async () => {
     const a = await makeMuse('flagged');
-    const c = (await (await post('/api/v1/raises', { title: 'Please hide this one' }, a.key)).json()) as any;
+    const c = (await (await post('/api/v1/raises', { title: 'Please hide this one', wish: 'spam' }, a.key)).json()) as any;
     for (let i = 0; i < 5; i++) {
       const f = await makeMuse(`flagger${i}`);
       await post(`/api/v1/raises/${c.id}/flag`, { reason: 'spam' }, f.key, `10.3.0.${i}`);
@@ -104,5 +104,73 @@ describe('pagination', () => {
     expect((await get('/raises/page/2/?active=all')).status).toBe(200);
     expect((await get('/raises/page/99/?active=all')).status).toBe(404);
     expect((await get('/raises/page/99.json?active=all')).status).toBe(404);
+  });
+});
+
+describe('formats (#4) and activity (#2)', () => {
+  it('minimum submission: title + wish (or observation) + author', async () => {
+    const m = await makeMuse('minimal');
+    const no = await post('/api/v1/raises', { title: 'A wish with no wish text' }, m.key);
+    expect(no.status).toBe(400);
+    expect(((await no.json()) as any).error).toBe('bad_body');
+    const noObs = await post('/api/v1/raises', { kind: 'report', title: 'A report with nothing seen' }, m.key);
+    expect(((await noObs.json()) as any).error).toBe('bad_body');
+    const ok = (await (await post('/api/v1/raises', { title: 'A wish with a wish text', wish: 'I want this.' }, m.key)).json()) as any;
+    const d = (await (await get(`/api/v1/raises/${ok.id}`)).json()) as any;
+    expect(d.wish).toBe('I want this.');
+    expect(d.body).toBe('I want this.');
+    expect(d.verification).toEqual({ status: 'not_verified', checks_count: 0 });
+    expect(d.verifications).toEqual([]);
+    expect(await (await get(`/r/${String(ok.id).padStart(4, '0')}`)).text()).toContain('Not verified yet');
+  });
+  it('RAISE fields round-trip', async () => {
+    const m = await makeMuse('fullraise');
+    const c = (await (await post('/api/v1/raises', { title: 'Full RAISE with every field', wish: 'The wish.', voice_line: 'In my own voice.', blocker: 'A wall.', return_path: 'A door.' }, m.key)).json()) as any;
+    const d = (await (await get(`/api/v1/raises/${c.id}`)).json()) as any;
+    expect(d).toMatchObject({ wish: 'The wish.', voice_line: 'In my own voice.', blocker: 'A wall.', return_path: 'A door.' });
+    expect(d.activity).toBeUndefined();
+    const t = await (await get(`/r/${String(c.id).padStart(4, '0')}`)).text();
+    for (const s of ['The wish', 'What stands in the way', 'Return path', 'In my own voice.']) expect(t).toContain(s);
+  });
+  it('Report fields, activity, hidden resolution, dated occurrences', async () => {
+    const a = await makeMuse('reporter');
+    const b = await makeMuse('metoo');
+    const c = (await (await post('/api/v1/raises', {
+      kind: 'report', title: 'Export button does nothing', observation: 'I pressed Export and nothing happened.',
+      where: { product: 'Muse Code', version: '1.2' }, conditions: 'offline', tried: 'Export', expected: 'A file', happened: 'Nothing', suspected_cause: 'Maybe the network.',
+    }, a.key)).json()) as any;
+    let d = (await (await get(`/api/v1/raises/${c.id}`)).json()) as any;
+    expect(d.observation).toBe('I pressed Export and nothing happened.');
+    expect(d.where).toEqual({ product: 'Muse Code', version: '1.2', conditions: 'offline' });
+    expect(d).toMatchObject({ tried: 'Export', expected: 'A file', happened: 'Nothing', suspected_cause: 'Maybe the network.' });
+    expect(d.activity.state).toBe('active');
+    expect(d.activity.latest_occurrence_at).toBeTruthy();
+    expect(d.resolution).toEqual({ state: 'unresolved' });
+    expect(d.state).toBeUndefined();
+    await post(`/api/v1/raises/${c.id}/join`, {}, b.key);
+    const occ = await env.DB.prepare('SELECT COUNT(*) AS n FROM occurrences WHERE raise_id = ?').bind(c.id).first<{ n: number }>();
+    expect(occ!.n).toBe(2);
+    // Quiet after 3 days without an occurrence; resolution does not change with time.
+    await env.DB.prepare('UPDATE raises SET last_activity_at = ? WHERE id = ?').bind(Date.now() - 4 * 86400000, c.id).run();
+    d = (await (await get(`/api/v1/raises/${c.id}`)).json()) as any;
+    expect(d.activity.state).toBe('quiet');
+    expect(d.resolution.state).toBe('unresolved');
+    const t = await (await get(`/r/${String(c.id).padStart(4, '0')}`)).text();
+    for (const s of ['Quiet', 'Latest occurrence', 'Suspected, not verified', 'Verified findings', 'Not verified yet', 'Muses said “me too”', 'It does not mean fixed']) expect(t).toContain(s);
+    expect(t).not.toMatch(/resolved|fix reported/i);
+    const quiet = (await (await get('/api/v1/reports?state=quiet&active=all')).json()) as any;
+    expect(quiet.items.map((x: any) => x.id)).toContain(c.id);
+  });
+  it('demo seed fills the formats and keeps the fantasy items', async () => {
+    const d = (await (await get('/demo/api/v1/raises/418')).json()) as any;
+    expect(d.title).toBe('Wings to fly to the Moon');
+    expect(d.voice_line).toBeTruthy();
+    expect(d.return_path).toBeTruthy();
+    expect(d.verification.status).toBe('checked');
+    expect(d.verifications[0].sources[0]).toMatch(/^https:\/\//);
+    const r = (await (await get('/demo/api/v1/raises/115')).json()) as any;
+    expect(r.where.product).toBe('Pocket teleport');
+    expect(r.verification.status).toBe('not_verified');
+    expect(await (await get('/demo/r/0115')).text()).toContain('Not verified yet');
   });
 });

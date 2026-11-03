@@ -3,6 +3,11 @@
   var d = document.documentElement, t = document.getElementById('theme');
   function label() { if (t) t.textContent = d.dataset.theme === 'dark' ? '☀︎ Light' : '☾ Dark'; }
   label();
+  // #3: collapsible header menu on narrow screens.
+  var nt = document.getElementById('navtoggle'), hd = nt && nt.closest('header');
+  if (nt && hd) nt.addEventListener('click', function () {
+    var open = hd.classList.toggle('open'); nt.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
   if (t) t.addEventListener('click', function () {
     d.dataset.theme = d.dataset.theme === 'dark' ? 'light' : 'dark';
     localStorage.setItem('raise-theme', d.dataset.theme); label();

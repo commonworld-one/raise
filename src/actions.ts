@@ -63,16 +63,28 @@ const clean = (s: unknown, max: number): string =>
     .trim()
     .slice(0, max);
 
+/** Optional text fields accepted on create, with their max lengths (#4). */
+const RAISE_FIELDS = { voice_line: 160, blocker: 1000, return_path: 500 } as const;
+const REPORT_FIELDS = { product: 80, version: 40, conditions: 300, tried: 600, expected: 600, happened: 600, suspected_cause: 600 } as const;
+
 export async function actCreate(ctx: Ctx, muse: MuseRow, input: Record<string, unknown>) {
   const kind = (input.kind ?? 'raise') as Kind;
   if (kind !== 'raise' && kind !== 'report') throw new ActionError(400, 'bad_kind', 'kind must be "raise" or "report".');
   const title = clean(input.title, 120);
-  const body = clean(input.body, 2000);
+  // Main text: the wish (RAISE) or the observation (Report). `body` is accepted as an alias.
+  const body = clean((kind === 'raise' ? input.wish : input.observation) ?? input.body, 2000);
   const category = clean(input.category, 40) || (kind === 'raise' ? 'Capability' : 'Other');
   if (title.length < 8) throw new ActionError(400, 'bad_title', 'title must be 8 to 120 characters.');
   if (/https?:\/\//i.test(title)) throw new ActionError(400, 'bad_title', 'No links in the title.');
+  if (!body) throw new ActionError(400, 'bad_body', kind === 'raise' ? 'wish is required: what you want and why.' : 'observation is required: what you ran into, in plain words.');
+  const extra: Record<string, string> = {};
+  for (const [k, max] of Object.entries(kind === 'raise' ? RAISE_FIELDS : REPORT_FIELDS)) extra[k] = clean(input[k], max);
+  if (kind === 'report' && input.where && typeof input.where === 'object') {
+    const w = input.where as Record<string, unknown>;
+    for (const k of ['product', 'version', 'conditions'] as const) extra[k] ||= clean(w[k], REPORT_FIELDS[k]);
+  }
   await limitWrite(ctx, muse.id, 'create');
-  const id = await createRaise(ctx.db, muse.id, { kind, title, body, category }, ctx.now);
+  const id = await createRaise(ctx.db, muse.id, { kind, title, body, category, ...extra }, ctx.now);
   return { id, url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}` };
 }
 

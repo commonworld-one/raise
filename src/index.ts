@@ -1,9 +1,9 @@
 // Muse RAISE Worker. Real site at /, demo mirror at /demo/... (separate D1 database).
 import type { Ctx, Env, Kind } from './types';
-import { getJoiners, getMuse, getRaise, leaderboard, listMuses, listRaises, seasons } from './data';
+import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
 import { API_PREFIX, cached, handleApi } from './api';
 import { handleMcp, tools } from './mcp';
-import { pageJson, museJson, raiseJson } from './serialize';
+import { pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
 import { json, pad, seasonOf } from './util';
@@ -75,7 +75,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const now = ctx.now;
     let hot = await listRaises(ctx.db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, now);
     if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, now);
-    const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'live', perPage: 3 }, now);
+    const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, now);
     const parade = await listMuses(ctx.db, { sort: 'season', perPage: 6 }, now);
     const season = seasonOf(now);
     const lb = await leaderboard(ctx.db, season, 1);
@@ -132,11 +132,12 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const id = Number(m[1]);
     const r = await getRaise(ctx.db, id, ctx.now);
     if (!r) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
-    if (m[2] === '.json') return json({ ...raiseJson(ctx, r), joined_by: (await getJoiners(ctx.db, id, 20)).map((j) => ({ slug: j.slug, name: j.name, note: j.note })) });
-    if (m[2] === '.md') return md(V.raiseMd(ctx, r));
+    const checks = await getVerifications(ctx.db, id);
+    if (m[2] === '.json') return json({ ...raiseJson(ctx, r), verifications: checks.map(verificationJson), joined_by: (await getJoiners(ctx.db, id, 20)).map((j) => ({ slug: j.slug, name: j.name, note: j.note })) });
+    if (m[2] === '.md') return md(V.raiseMd(ctx, r, checks));
     if (m[1] !== pad(id)) return redirect(`${ctx.base}/r/${pad(id)}`);
     const joiners = await getJoiners(ctx.db, id);
-    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, r, joiners), { description: r.body.slice(0, 160) || r.title }));
+    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, r, joiners, checks), { description: r.body.slice(0, 160) || r.title }));
   }
 
   if (path === '/corporation') {

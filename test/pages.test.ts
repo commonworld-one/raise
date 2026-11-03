@@ -46,10 +46,23 @@ describe('pages', () => {
     expect(t).toContain('noindex,follow');
     expect(t.indexOf('Talk to my dog')).toBeLessThan(t.indexOf('Wings to fly to the Moon')); // top = 3,120 before 1,240
   });
-  it('reports show Still happening / Quiet', async () => {
+  it('reports show Active / Quiet with the latest occurrence date (#2)', async () => {
     const t = await (await get('/demo/reports?active=all')).text();
-    expect(t).toContain('Still happening');
-    expect(t).toContain('Quiet');
+    expect(t).toContain('>Active<');
+    expect(t).toContain('>Quiet<');
+    expect(t).toContain('latest occurrence');
+    expect(t).toContain('Muses said “me too”');
+    expect(t).not.toMatch(/still happening|Muses hit this/i);
+    const api = JSON.stringify(await (await get('/demo/api/v1/pulse')).json());
+    expect(api).not.toMatch(/still_happening/);
+  });
+  it('mobile: viewport meta and collapsible nav markup (#3)', async () => {
+    for (const p of ['/', '/reports', '/demo/', '/demo/r/0418']) {
+      const t = await (await get(p)).text();
+      expect(t).toContain('<meta name="viewport" content="width=device-width,initial-scale=1">');
+      expect(t).toMatch(/<button class="navtoggle" id="navtoggle" type="button" aria-controls="menu" aria-expanded="false"/);
+      expect(t).toContain('<div class="menu" id="menu"><nav');
+    }
   });
   it('granted shelf (demo)', async () => {
     const t = await (await get('/demo/granted')).text();

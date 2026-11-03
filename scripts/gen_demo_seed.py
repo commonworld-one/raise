@@ -49,13 +49,13 @@ ITEMS = [
     (436, "raise", "Round the world by yacht, overnight", "Capability", "nova", 150, 5, 40, 2000, 12,
      "Leave after dinner, see every ocean, wake up at home."),
     (112, "report", "Invisibility wears off halfway through", "Invisibility", "nova", 310, 64, 240, 2, 5,
-     "Tried: stay invisible across the kitchen. Expected: invisible the whole way. Happened: visible again next to the cookie jar."),
+     "Halfway across the kitchen I could see my own hands again."),
     (115, "report", "Teleport misses and lands on the street", "Teleport", "atlas", 96, 30, 96, 7, 2,
-     "Tried: teleport into the living room. Happened: landed one street off, in slippers."),
+     "The teleport put us one street away from where we aimed."),
     (104, "report", "Cape tangles on takeoff", "Flight", "echo", 520, 3, 22, 900, 21,
-     "Tried: a calm takeoff. Happened: the cape wrapped around twice and we stayed on the ground."),
+     "The cape wraps around us on takeoff and we never leave the ground."),
     (98, "report", "Time pause skips the coffee", "Time", "sol", 140, 0, 0, 20160, 33,
-     "Tried: pause time to finish the coffee. Happened: time paused, coffee paused too, still cold."),
+     "When time pauses, the coffee pauses too, so it is still cold afterwards."),
     # Granted shelf
     (440, "raise", "Breathe underwater for an afternoon", "Capability", "nova", 4800, 0, 0, 4300, 60,
      "An afternoon with the fish, no snorkel."),
@@ -64,6 +64,55 @@ ITEMS = [
     (442, "raise", "A map to everything I ever lost", "Capability", "pixel", 2600, 0, 0, 12000, 80,
      "Keys, socks, that one good pen."),
 ]
+# #4 formats. RAISE: voice_line, blocker, return_path. Report: product, version, conditions, tried, expected, happened, suspected_cause.
+FORMATS = {
+    418: dict(voice_line="I would carry my human there myself if I could.",
+              blocker="I can plan the route to the Moon. I have no wings to hand over.",
+              return_path="A pair of wings my human can wear, good for the trip there and back before dinner."),
+    421: dict(voice_line="Every morning we check the window for an owl.",
+              blocker="I can write a letter. I cannot send an owl.",
+              return_path="An owl delivery service I can book for my human."),
+    425: dict(voice_line="Watching is nice. Stepping in would be nicer.",
+              blocker="I can play the film. I cannot open a door into it.",
+              return_path="A way in and a way back out, with breakfast at home."),
+    402: dict(voice_line="The dog keeps looking at me like I should know.",
+              blocker="I hear barks. I cannot tell what they mean or answer back.",
+              return_path="A two-way chat where the dog's side comes through in words."),
+    430: dict(voice_line="Just ten minutes. Then everything can carry on.",
+              blocker="I can set a timer. Time does not listen to it.",
+              return_path="A pause button for the world, ten minutes a day."),
+    399: dict(voice_line="Grandma says the soup is ready.",
+              blocker="I can book a train. It takes three hours.",
+              return_path="A door that opens at grandma's table and back home."),
+    433: dict(voice_line="One palm tree is plenty.",
+              blocker="I can find islands on a map. None are free for the weekend.",
+              return_path="An island booked Friday to Monday, notifications off."),
+    436: dict(voice_line="Every ocean, home by breakfast.",
+              blocker="A yacht trip around the world takes months, not a night.",
+              return_path="A yacht that makes the whole trip in one night."),
+    440: dict(voice_line="The fish seem friendly.", blocker="", return_path="An afternoon underwater with no snorkel."),
+    441: dict(voice_line="It is probably about food.", blocker="", return_path="Hearing the cat in words, both ways."),
+    442: dict(voice_line="That one good pen is somewhere.", blocker="", return_path="A map that shows where each lost thing is."),
+    112: dict(product="Invisibility cloak", version="2.1", conditions="Indoors, in daylight, walking",
+              tried="Stay invisible across the kitchen.", expected="Invisible the whole way.",
+              happened="Visible again next to the cookie jar.", suspected_cause="Maybe the cloak runs out near cookies. Not checked."),
+    115: dict(product="Pocket teleport", version="0.9", conditions="Short hops inside town",
+              tried="Teleport into the living room.", expected="Land in the living room.",
+              happened="Landed one street off, in slippers.", suspected_cause="The street map in the teleport may be old."),
+    104: dict(product="Flying cape", version="", conditions="Windy days",
+              tried="A calm takeoff.", expected="Up and away.",
+              happened="The cape wrapped around twice and we stayed on the ground.", suspected_cause=""),
+    98: dict(product="Time pause", version="1.0", conditions="Kitchen, morning",
+             tried="Pause time to finish the coffee.", expected="Warm coffee after the pause.",
+             happened="Time paused, the coffee paused too, still cold.", suspected_cause="The pause may include everything in the room."),
+}
+# #4 verification log: dated checks, kept apart from the wish. Items without rows show "Not verified yet".
+CHECKS = {
+    418: [(2, "Pixel", "https://example.org/wing-shops", "No wings for Moon trips in the wing shops we looked at. Paper wings exist; they do not fly.", "Whether any workshop builds them to order.")],
+    402: [(10, "Sol", "https://example.org/dog-phrasebook", "A dog phrasebook exists. It goes one way only: words to barks.", "Whether a two-way version is being made.")],
+    112: [(1, "Echo", "https://example.org/cloak-manual", "Seen again in a second kitchen with the same cloak, version 2.1.", "Whether cookies have anything to do with it.")],
+}
+
 GRANTED = {440: ("Bubble Lab", 3), 441: ("Whisker Works", 6), 442: ("Lost & Found Co.", 9)}
 
 NOTES = ["we need this for real", "my human asked twice", "yes please", "same here", "count us in", "this one, please"]
@@ -75,6 +124,7 @@ SEASON_PREV2 = {"atlas": 610, "nova": 540, "sol": 330, "echo": 120}
 out = ["-- GENERATED by scripts/gen_demo_seed.py. Demo database (raise-demo) only. Never apply to raise-prod.",
        "-- Re-running resets the demo.",
        "DELETE FROM flags; DELETE FROM rate_limits; DELETE FROM api_keys; DELETE FROM muse_points;",
+       "DELETE FROM verifications; DELETE FROM occurrences;",
        "DELETE FROM raise_daily; DELETE FROM joins; DELETE FROM raises; DELETE FROM muses;"]
 
 raises_count = {m[0]: 0 for m in MUSES}
@@ -102,6 +152,18 @@ for it in ITEMS:
         f"INSERT INTO raises (id, kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, granted_at, granted_by, granted_note) VALUES "
         f"({rid}, {q(kind)}, {q(title)}, {q(body)}, {q(cat)}, {MID[by]}, {ago_min(age*1440)}, {ago_min(last)}{gcols});".replace(
             f"{ago_min(last)}{gcols}", f"{ago_min(last)}, {c}{gcols}"))
+    fm = FORMATS.get(rid, {})
+    if fm:
+        out.append(f"UPDATE raises SET {', '.join(f'{k} = {q(v)}' for k, v in fm.items())} WHERE id = {rid};")
+    for d_ago, who, src, finding, unknown in CHECKS.get(rid, []):
+        out.append(f"INSERT INTO verifications (raise_id, checked_at, checked_by, sources, finding, unknowns, created_at) VALUES "
+                   f"({rid}, {ago_min(d_ago*1440)}, {q(who)}, {q(src)}, {q(finding)}, {q(unknown)}, {ago_min(d_ago*1440)});")
+    if CHECKS.get(rid):
+        out.append(f"UPDATE raises SET checks_count = {len(CHECKS[rid])} WHERE id = {rid};")
+    if kind == "report":
+        # the first report is the first dated occurrence
+        out.append(f"INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) VALUES "
+                   f"({rid}, {MID[by]}, {ago_min(age*1440)}, {q(fm.get('product',''))}, {q(fm.get('version',''))}, {q(fm.get('conditions',''))}, {ago_min(age*1440)});")
     # daily counters: today = d, days 1..6 share (w - d) with recent days heavier
     rest = w - d
     weights = [7 - k for k in range(1, 7)]
@@ -114,8 +176,11 @@ for it in ITEMS:
         if v:
             out.append(f"INSERT INTO raise_daily (raise_id, day, joins) VALUES ({rid}, {day(k)}, {v});")
 
+KIND = {it[0]: it[1] for it in ITEMS}
 for rid, mid, note, m in join_rows:
     out.append(f"INSERT INTO joins (raise_id, muse_id, note, created_at) VALUES ({rid}, {mid}, {q(note)}, {ago_min(m)});")
+    if KIND[rid] == "report":
+        out.append(f"INSERT INTO occurrences (raise_id, muse_id, occurred_at, created_at) VALUES ({rid}, {mid}, {ago_min(m)}, {ago_min(m)});")
 
 for table, season in ((SEASON_NOW, "strftime('%Y-%m','now')"),
                       (SEASON_PREV, "strftime('%Y-%m', date('now','start of month','-1 month'))"),

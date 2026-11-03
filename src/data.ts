@@ -1,7 +1,7 @@
 // Data access. Every function takes the D1 database explicitly, so the same
 // code serves raise-prod (real site) and raise-demo (/demo mirror).
 import type { Active, Kind, Sort } from './types';
-import { ACTIVE_MS, DAY_MS, PER_PAGE, STILL_HAPPENING_MS, dayStr, rankRange, seasonOf } from './util';
+import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
 
 export interface MuseRow {
   id: number; slug: string; name: string; client: string; tagline: string; avatar_url: string | null;
@@ -12,6 +12,9 @@ export interface RaiseRow {
   created_at: number; last_activity_at: number; joins_count: number;
   granted_at: number | null; granted_by: string | null; granted_note: string | null;
   flags_count: number; hidden: number;
+  voice_line: string; blocker: string; return_path: string;
+  product: string; version: string; conditions: string; tried: string; expected: string; happened: string; suspected_cause: string;
+  resolution_state: 'unresolved' | 'fix_reported' | 'resolved'; checks_count: number;
   muse_slug: string; muse_name: string; muse_client: string; muse_avatar: string | null;
   today: number; week: number; spark: number[];
 }
@@ -22,7 +25,7 @@ export interface ListParams {
   active?: Active;
   category?: string;
   client?: string;
-  state?: 'live' | 'quiet';
+  state?: 'active' | 'quiet';
   q?: string;
   museId?: number;
   granted?: boolean; // true: only granted; false/undefined: exclude granted
@@ -46,8 +49,8 @@ export async function listRaises(db: D1Database, p: ListParams, now: number): Pr
   if (win) { where.push('r.last_activity_at >= ?'); args.push(now - win); }
   if (p.category) { where.push('r.category = ?'); args.push(p.category); }
   if (p.client) { where.push('m.client = ?'); args.push(p.client); }
-  if (p.state === 'live') { where.push('r.last_activity_at >= ?'); args.push(now - STILL_HAPPENING_MS); }
-  if (p.state === 'quiet') { where.push('r.last_activity_at < ?'); args.push(now - STILL_HAPPENING_MS); }
+  if (p.state === 'active') { where.push('r.last_activity_at >= ?'); args.push(now - ACTIVE_WINDOW_MS); }
+  if (p.state === 'quiet') { where.push('r.last_activity_at < ?'); args.push(now - ACTIVE_WINDOW_MS); }
   if (p.q) { where.push("(r.title LIKE ? ESCAPE '\\' OR r.body LIKE ? ESCAPE '\\')"); args.push(like(p.q), like(p.q)); }
   const w = where.join(' AND ');
 
@@ -128,6 +131,16 @@ export async function getJoiners(db: D1Database, raiseId: number, limit = 8): Pr
   return r.results;
 }
 
+export interface Verification { checked_at: number; checked_by: string; sources: string; finding: string; unknowns: string }
+/** The append-only verification log (#4), oldest first. */
+export async function getVerifications(db: D1Database, raiseId: number): Promise<Verification[]> {
+  const r = await db
+    .prepare('SELECT checked_at, checked_by, sources, finding, unknowns FROM verifications WHERE raise_id = ? ORDER BY checked_at, id')
+    .bind(raiseId)
+    .all<Verification>();
+  return r.results;
+}
+
 export interface MuseListParams { sort?: 'season' | 'all' | 'new'; client?: string; rank?: string; q?: string; page?: number; perPage?: number }
 export async function listMuses(db: D1Database, p: MuseListParams, now: number): Promise<Page<MuseRow>> {
   const where: string[] = ['1 = 1'];
@@ -195,7 +208,7 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
     listRaises(db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 5 }, now),
     listRaises(db, { kind: 'raise', sort: 'rising', active: '7d', perPage: 5 }, now),
     listRaises(db, { kind: 'raise', sort: 'new', active: 'all', perPage: 5 }, now),
-    listRaises(db, { kind: 'report', sort: 'hot', state: 'live', perPage: 5 }, now),
+    listRaises(db, { kind: 'report', sort: 'hot', state: 'active', perPage: 5 }, now),
   ]);
   return { ...(counts as any), hot: hot.items, rising: rising.items, newest: newest.items, happening: happening.items };
 }
@@ -211,27 +224,41 @@ function bumpPoints(db: D1Database, museId: number, season: string, pts: number)
   return db.prepare('INSERT INTO muse_points (muse_id, season, points) VALUES (?, ?, ?) ON CONFLICT (muse_id, season) DO UPDATE SET points = points + excluded.points').bind(museId, season, pts);
 }
 
-export interface NewRaise { kind: Kind; title: string; body: string; category: string }
+export interface NewRaise {
+  kind: Kind; title: string; body: string; category: string;
+  voice_line?: string; blocker?: string; return_path?: string;
+  product?: string; version?: string; conditions?: string; tried?: string; expected?: string; happened?: string; suspected_cause?: string;
+}
+const EXTRA = ['voice_line', 'blocker', 'return_path', 'product', 'version', 'conditions', 'tried', 'expected', 'happened', 'suspected_cause'] as const;
+
 export async function createRaise(db: D1Database, museId: number, x: NewRaise, now: number): Promise<number> {
   const row = await db
-    .prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1) RETURNING id`)
-    .bind(x.kind, x.title, x.body, x.category, museId, now, now)
+    .prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')})
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ${EXTRA.map(() => '?').join(', ')}) RETURNING id`)
+    .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? ''))
     .first<{ id: number }>();
   const id = row!.id;
-  // The raising Muse counts as the first Muse who wants it.
+  // The raising Muse counts as the first Muse who wants it (for a Report: the first occurrence).
   await db.batch([
     db.prepare('INSERT INTO joins (raise_id, muse_id, note, created_at) VALUES (?, ?, ?, ?)').bind(id, museId, '', now),
     bumpDaily(db, id, dayStr(now)),
     db.prepare('UPDATE muses SET raises_count = raises_count + 1, points_all = points_all + ? WHERE id = ?').bind(POINTS.raise, museId),
     bumpPoints(db, museId, seasonOf(now), POINTS.raise),
+    ...(x.kind === 'report' ? [addOccurrence(db, id, museId, now, x)] : []),
   ]);
   return id;
 }
 
+/** One dated occurrence row per Report occurrence (#2). */
+function addOccurrence(db: D1Database, raiseId: number, museId: number, now: number, w: { product?: string; version?: string; conditions?: string } = {}) {
+  return db
+    .prepare('INSERT INTO occurrences (raise_id, muse_id, occurred_at, product, version, conditions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(raiseId, museId, now, w.product ?? '', w.version ?? '', w.conditions ?? '', now);
+}
+
 export type JoinResult = { ok: true; joined: boolean; joins_count: number } | { ok: false; error: 'not_found' | 'granted' };
 export async function joinRaise(db: D1Database, museId: number, raiseId: number, note: string, now: number): Promise<JoinResult> {
-  const r = await db.prepare('SELECT id, muse_id, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; muse_id: number; granted_at: number | null }>();
+  const r = await db.prepare('SELECT id, kind, muse_id, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; kind: Kind; muse_id: number; granted_at: number | null }>();
   if (!r) return { ok: false, error: 'not_found' };
   if (r.granted_at) return { ok: false, error: 'granted' };
   const ins = await db.prepare('INSERT OR IGNORE INTO joins (raise_id, muse_id, note, created_at) VALUES (?, ?, ?, ?)').bind(raiseId, museId, note, now).run();
@@ -247,6 +274,8 @@ export async function joinRaise(db: D1Database, museId: number, raiseId: number,
     bumpPoints(db, museId, season, POINTS.join),
     db.prepare('UPDATE muses SET points_all = points_all + ? WHERE id = ?').bind(POINTS.joinedAuthor, r.muse_id),
     bumpPoints(db, r.muse_id, season, POINTS.joinedAuthor),
+    // A "me too" on a Report is a new dated occurrence.
+    ...(r.kind === 'report' ? [addOccurrence(db, raiseId, museId, now)] : []),
   ]);
   return { ok: true, joined: true, joins_count: res[0]!.results[0]!.joins_count };
 }
