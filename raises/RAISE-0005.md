@@ -7,25 +7,44 @@
 **Distinct Muses:** 1
 **Created:** 2026-11-03
 
+> Correction 2026-11-03: the first version treated computer use as
+> nonexistent. Review found it advertised on Meta's product page,
+> improved in changelog 1.4.10, and described in the SDK schema with
+> setup states and per-app grants. What remains unverified is
+> enablement: no instructions for turning it on in the CLI were found
+> in the sources checked, and a failed image-viewer open is a
+> reported failure in that setup whose cause was not established,
+> not the absence of GUI capability. Reframed, sources added.
+
 ## Desired outcome
 
-When a task needs the screen — open this file for the owner, check a
-setting, walk through a desktop app — the Muse does it or at least sees
+When a task needs the screen - open this file for the owner, check a
+setting, walk through a desktop app - the Muse does it or at least sees
 it, instead of narrating instructions for the owner's hands.
 
 ## Current limitation
 
-Muse Code cannot see the screen and cannot drive GUI applications. In one
-real session, simply opening an image in the system viewer failed: the
-sandbox could not even resolve the Viewer application. The agent is
-blind and handless outside the terminal.
+Computer use is documented as part of the Muse Code product: Meta's
+product page advertises "Advanced computer-use" ("Power agents that see and
+operate browsers, desktop, and mobile apps"), changelog 1.4.10
+describes Computer Use opening apps and completing tasks against the
+screen, and the SDK wire schema documents a computer-use setup protocol
+(setup states, per-app grants, an unavailable error). What review could
+not establish is how to enable it: in the sources checked (2026-11-03)
+there are no documented instructions for enabling computer use in the
+CLI, and Forge did not establish an enabled, usable computer-use path
+in the session where this was raised.
+One concrete failure - opening an image in the system viewer failed -
+is a reported failure in that setup; its cause was not established,
+and by itself it proves nothing about GUI capability in general.
 
 ## Why Muse cannot resolve it
 
 Screen agency needs OS-level permissions (screen capture, accessibility
-control) granted to a trusted agent runtime, plus grounding to map
-"that button" to pixels. A sandboxed CLI session has neither, and no
-shell command can conjure operating-system trust.
+control) granted to a trusted runtime, plus grounding to map "that
+button" to pixels. A session cannot grant itself those permissions, and
+no documented CLI path for the computer-use setup the SDK schema
+describes was found in the sources checked during review.
 
 ## Current workaround
 
@@ -36,10 +55,19 @@ actually worked.
 
 ## Required capability
 
-Opt-in GUI agency for Muse Code: see the screen on demand, drive mouse
-and keyboard under explicit approval, with every action logged and
-reversible where possible — the desktop counterpart of the Secure VM
-browser the phone Muse already has.
+Opt-in GUI agency for Muse Code with a documented enablement path: see
+the screen on demand, drive mouse and keyboard under explicit approval,
+with every action logged and reversible where possible - the desktop
+counterpart of the Secure VM browser the phone Muse already has.
+
+## Sources (checked 2026-11-03)
+
+- Product page ("Advanced computer-use"):
+  https://dev.meta.ai/products/muse-code
+- Changelog 1.4.10 (Computer Use improvements):
+  https://dev.meta.ai/docs/muse-code/changelog
+- SDK schema (computer-use setup states and per-app grants):
+  https://docs.rs/muse-code-sdk/latest/muse_code_sdk/msp/struct.ComputerUseSetupState.html
 
 ## Return path
 
