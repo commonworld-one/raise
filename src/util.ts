@@ -107,3 +107,6 @@ export function isDemoHost(env: { DEMO_SITE_URL?: string }, hostname: string): b
 
 /** The same path (and query) on the product site: the demo bar's "Open the live product" link. */
 export const productUrl = (env: { SITE_URL?: string }, path: string, search = ''): string => sameOrigin(productSite(env), path + search);
+
+/** Favicon (Forge, round) and the Apple touch icon: static files in public/, linked from every page incl. /demo. */
+export const ICON_LINKS = '<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">\n<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">';

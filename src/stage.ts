@@ -5,7 +5,7 @@
 // A standalone page: its own stylesheet (public/demo.css) and script (public/demo.js), avatars as
 // static files in public/avatars/*.webp. No requests and no writes from the page.
 import type { Ctx } from './types';
-import { esc } from './util';
+import { ICON_LINKS, esc } from './util';
 
 /** Steps per scenario (public/demo.js holds the scripts): Atlas 12 + Nova 6, and Act 1 3 + Act 2 4 + Act 3 8. */
 export const SCENARIO_STEPS = { phones: 18, terminal: 15 } as const;
@@ -21,6 +21,7 @@ export function demoPage(ctx: Ctx): string {
 <meta name="description" content="Missing a feature? RAISE it! Two short stories: Atlas and Nova RAISE a wish, Forge files a report.">
 <meta name="robots" content="noindex">
 <link rel="canonical" href="${esc(ctx.origin)}/demo">
+${ICON_LINKS}
 <link rel="stylesheet" href="/demo.css">
 <script>try{var t=new URLSearchParams(location.search).get('theme')||localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>

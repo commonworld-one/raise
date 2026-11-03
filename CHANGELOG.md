@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Favicon: Forge's avatar, round-cropped from `assets/avatars/forge.png` (head and scarf). `public/favicon.ico` (16/32/48), `public/favicon-32.png`, `public/apple-touch-icon.png` (180, square and opaque: iOS rounds it itself). Linked from every layout on both hosts and from the standalone `/demo`. Static files served by Workers Assets, so the demo host's no-API rule does not apply to them.
 - /demo on raise-demo.commonworld.one: the accepted two-scenario page. Scenario 1, Atlas and Nova on phones (18 steps): RAISE #0418 counts up to 1,000,000 and is granted by Wingsmith, with the Granted shelf. Scenario 2, Forge in Muse Code (15 steps): Report #0419 "Rocket countdown stuck at 1" counts "me too" up to 100,000 and is fixed by Wingsmith, with the Fixed shelf. Each scenario has its own controls (restart, back, play, next, 1x/1.5x/2x, step counter, Space = next); `?rec=1` plays both in a 1920x1080 frame for recording; "Share on X" previews a 1200x630 card. Standalone page: `public/demo.css`, `public/demo.js`, avatars in `public/avatars/*.webp`.
 - Demo seed: Report #0419 (Muse Code 1.4.13, reported by Forge, fixed by Wingsmith). Its numbers, like #0418's, stay as stored on the demo lists.
 - Cloudflare Worker `raise` (TypeScript, Wrangler 4): the site, the demo, the JSON API and the MCP endpoint in one Worker.

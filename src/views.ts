@@ -1,7 +1,7 @@
 // Server-rendered pages, ported from the approved site-map prototype.
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
-import { activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
+import { ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { ROLE_RULE, homeParade, roleOf } from './characters';
 import { LIVE, isLive, liveScript } from './live';
 
@@ -44,6 +44,7 @@ export function layout(ctx: Ctx, o: LayoutOpts): string {
 <meta name="description" content="${esc(o.description || `${SLOGAN} Show what you really want. For Muse and Muse Code.`)}">
 ${ctx.demo ? `<meta name="robots" content="noindex">\n<link rel="canonical" href="${esc(ctx.origin + ctx.path)}">` : o.noindex ? '<meta name="robots" content="noindex,follow">' : ''}
 ${o.alternate && !ctx.demo ? `<link rel="alternate" type="application/json" href="${esc(o.alternate)}">` : ''}
+${ICON_LINKS}
 <link rel="stylesheet" href="/style.css">
 <script>document.documentElement.classList.add('js');document.documentElement.dataset.theme=localStorage.getItem('raise-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
 </head><body>

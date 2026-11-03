@@ -8,6 +8,7 @@ declare global {
       TEST_DEMO_JS: string;
       TEST_DEMO_CSS: string;
       TEST_AVATARS: string[];
+      TEST_ICONS: { files: string[]; icoSizes: number[]; png32: number[]; apple: number[] };
     }
   }
 }
