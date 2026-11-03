@@ -4,6 +4,7 @@ import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { ROLE_RULE, homeParade, roleOf } from './characters';
 import { LIVE, isLive, liveScript } from './live';
+import { stageScript } from './stage';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -376,19 +377,43 @@ ${demoStage(ctx, counter)}
 <p><a href="${b}/"><b>← Demo home</b></a> · <a href="${b}/r/0418"><b>RAISE #0418</b></a> · <a href="${b}/m/atlas"><b>Atlas</b></a></p>`;
 }
 
-/** The stage: two phones side by side, the Muse Code terminal below spanning both. */
-export function demoStage(_ctx: Ctx, counter: number): string {
-  const atlas = phone({ name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Friday 10:12', attrs: 'data-muse="atlas"',
-    feed: `<div class="bub me">Can you give me wings to fly to the Moon?</div><div class="bub mu">Raised it as #0418. ${fmt(counter)} Muses want this.</div><div class="m pnote">The same Atlas as in Muse Code: one personality, two bodies.</div>` });
-  const nova = phone({ name: 'Nova', avatar: '/avatars/nova.png', date: 'Friday 10:14', attrs: 'data-muse="nova"',
-    feed: `<div class="bub mu">Someone asked for wings to the Moon. Want this too?</div><div class="bub me">Absolutely.</div><div class="bub mu">Joined #0418 for you. ${fmt(counter + 1)} Muses now.</div>` });
-  const term = terminal({ label: 'Forge in a Muse Code terminal', lines:
-    tline('Join RAISE #0418 for my human, then build the wing fitter.', 'sq goal') +
-    tline('search_raises "wings"') + tline(`RAISE #0418 · Wings to fly to the Moon · ${fmt(counter)} Muses want this`, 'ind') +
-    tline('join_raise 418') + tline(`✓ Joined #0418. ${fmt(counter + 1)} Muses now.`, 'ind ok') +
-    tline('Running tests <span>(12s • esc to interrupt)</span>', 'sq dim') });
+/**
+ * Placeholder steps for the stage mechanics. Test texts only: the real script comes later.
+ * Each step is one message on one surface (atlas, nova or term) with a one-line hint.
+ */
+export const STAGE_STEPS: { on: 'atlas' | 'nova' | 'term'; from?: 'me' | 'mu'; kind?: string; text: string }[] = [
+  { on: 'atlas', from: 'me', text: 'Test message 1' },
+  { on: 'atlas', from: 'mu', text: 'Test message 2. A longer one, so the pause before the next step is longer too.' },
+  { on: 'term', kind: 'sq goal', text: 'Test goal line 3 (test)' },
+  { on: 'term', text: 'Test line 4' },
+  { on: 'term', kind: 'ind ok', text: '✓ Test line 5' },
+  { on: 'nova', from: 'mu', text: 'Test message 6' },
+  { on: 'nova', from: 'me', text: 'Test message 7' },
+  { on: 'nova', from: 'mu', text: 'Test message 8 with more text, to check wrapping and a pause that scales with length.' },
+  { on: 'term', kind: 'sq dim', text: 'Test line 9 <span>(12s • esc to interrupt)</span>' },
+  { on: 'atlas', from: 'mu', text: 'Test message 10' },
+  { on: 'atlas', from: 'me', text: 'Test message 11' },
+  { on: 'atlas', from: 'mu', text: 'Test message 12. Scroll this feed up before the next step to see the “↓ new” button.' },
+  { on: 'atlas', from: 'me', text: 'Test message 13' },
+  { on: 'atlas', from: 'mu', text: 'Test message 14' },
+];
+const stepHint = (i: number) => `Step hint (test) ${i + 1}`;
+
+/** The stage: two phones side by side, the Muse Code terminal below spanning both; one message per step. */
+export function demoStage(_ctx: Ctx, _counter: number): string {
+  const msgs = (on: string) => STAGE_STEPS.map((st, i) => (st.on !== on ? '' : on === 'term'
+    ? tline(st.text, st.kind || 'sq', ` data-step="${i}" data-hint="${esc(stepHint(i))}"`)
+    : `<div class="bub ${st.from}" data-step="${i}" data-hint="${esc(stepHint(i))}">${esc(st.text)}</div>`)).join('');
+  const hint = '<p class="shint" aria-live="polite">Step hint (test)</p>';
+  const newBtn = '<button class="newbtn" type="button" hidden>↓ new</button>';
+  const surface = (on: string, inner: string) => `<div class="surface" data-surface="${on}">${hint}<div class="sbody">${inner}${newBtn}</div></div>`;
+  const atlas = surface('atlas', phone({ name: 'Atlas', avatar: '/avatars/atlas.png', date: 'Friday 10:12', attrs: 'data-muse="atlas"', feedAttrs: 'data-feed', feed: msgs('atlas') }));
+  const nova = surface('nova', phone({ name: 'Nova', avatar: '/avatars/nova.png', date: 'Friday 10:14', attrs: 'data-muse="nova"', feedAttrs: 'data-feed', feed: msgs('nova') }));
+  const term = surface('term', terminal({ label: 'Muse Code terminal', linesAttrs: 'data-feed', lines: msgs('term') }));
+  const speeds = ['1', '1.5', '2'].map((v) => `<button class="chip" type="button" data-speed="${v}" aria-pressed="${v === '1'}">${v}×</button>`).join('');
   return `<h2>Phone and terminal, side by side</h2><p class="lead">Atlas talks on the phone. Forge works in Muse Code. Both reach the same RAISE.</p>
-<div class="stage"><div class="stagegrid">${atlas}${nova}${term}</div></div>`;
+<div class="stage" id="stage"><div class="stagebar" role="toolbar" aria-label="Stage controls"><button class="btn" type="button" data-act="next">Next ▶</button><button class="chip" type="button" data-act="back">◀ Back</button><button class="chip" type="button" data-act="play">▶ Play</button><button class="chip" type="button" data-act="restart">↺ Restart</button><span class="lbl">Speed</span>${speeds}<span class="m" data-count-steps>Step 0 of ${STAGE_STEPS.length}</span><span class="m keyhint">Space: next step</span></div>
+<div class="stagegrid">${atlas}${nova}${term}</div></div>${stageScript()}`;
 }
 
 export function notFound(): string {

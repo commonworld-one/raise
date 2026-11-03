@@ -129,3 +129,18 @@ background:var(--tbg);color:var(--tink);border:1px solid var(--line);border-radi
 @media (max-width:860px){.phones3,.stagegrid{grid-template-columns:minmax(0,380px);justify-content:center}.counter{grid-template-columns:1fr;gap:14px;text-align:center}.ctr-main{align-items:center}.ctr-main .granted{align-self:center}}
 @media (max-width:480px){.term{font-size:11px;line-height:1.6}.tx{padding:8px 12px 12px}.trule .long,.tfoot .folder{display:none}.device{border-radius:40px;padding:10px}.screen{border-radius:31px}}
 @media (prefers-reduced-motion:reduce){.feed{scroll-behavior:auto}.phone,.term{transition:none}}
+/* /demo stage mechanics: one message per step, active surface bright, the others dimmed */
+.stagebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 18px}.stagebar .btn{min-height:40px;padding:8px 18px}.stagebar .chip[aria-pressed=true]{background:var(--chip-on);color:var(--chip-on-ink);border-color:var(--chip-on)}
+.stagebar .chip{color:var(--ink)}html:not(.js) .stagebar{display:none}
+.surface{min-width:0;display:flex;flex-direction:column;gap:8px;transition:opacity .35s,filter .35s}.stagegrid .surface[data-surface=term]{grid-column:1/-1}
+.shint{margin:0;font-size:13px;font-weight:600;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbody{position:relative;min-width:0}
+.stage.started .surface.dim{opacity:.42;filter:saturate(.6)}
+.stage [data-step].hide{display:none}
+.stage [data-step].enter{animation:stepin .38s cubic-bezier(.2,.7,.2,1)}
+@keyframes stepin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.stage .tlines{max-height:12.5em;overflow-y:auto;scroll-behavior:smooth;overscroll-behavior:contain}
+.newbtn{position:absolute;left:50%;bottom:86px;transform:translateX(-50%);border:0;border-radius:999px;background:var(--acc-solid);color:#fff;font:600 13px "DM Sans";padding:6px 14px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.surface[data-surface=term] .newbtn{bottom:96px}.newbtn[hidden]{display:none}
+@media (prefers-reduced-motion:reduce){.stage [data-step].enter{animation:none}.surface{transition:none}.stage .tlines{scroll-behavior:auto}}
+@media (max-width:480px){.keyhint{display:none}}

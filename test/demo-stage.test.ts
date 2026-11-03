@@ -18,7 +18,7 @@ describe('/demo routing', () => {
     const r = await dget('/demo', { redirect: 'manual' });
     expect(r.status).toBe(200);
     const t = await r.text();
-    expect(t).toContain('<div class="stage">');
+    expect(t).toContain('<div class="stage" id="stage">');
     expect(t).toContain('id="story"');
     expect(t).toContain('class="term"');
     expect(t).toContain('<button class="btn" type="button" id="play">▶ Play the story</button>');
@@ -29,7 +29,7 @@ describe('/demo routing', () => {
 
   it('the stage: Atlas and Nova phones side by side, the Muse Code terminal below', async () => {
     const t = await (await dget('/demo')).text();
-    const stage = between(t, '<div class="stage">', '<p><a href="/">');
+    const stage = between(t, '<div class="stage" id="stage">', '<p><a href="/">');
     const phones = [...stage.matchAll(/<figure class="phone" data-muse="([a-z]+)"/g)].map((m) => m[1]);
     expect(phones).toEqual(['atlas', 'nova']);
     expect(stage).toContain('src="/avatars/atlas.png"');
@@ -64,7 +64,7 @@ describe('demo home', () => {
   it('has no stage and no "Connect your Muse"; its Demo buttons point to /demo', async () => {
     const t = await (await dget('/')).text();
     expect(t).not.toContain('Connect your Muse');
-    expect(t).not.toContain('<div class="stage">');
+    expect(t).not.toContain('class="stage"');
     expect(t).not.toContain('id="story"');
     expect(t).toContain('<a href="/demo" class="demo">▶ Demo</a>');
     const hero = between(t, '<section class="hero">', '</section>');

@@ -53,6 +53,66 @@
       })(start);
     }
   });
+  // /demo stage: one message per step (src/stage.ts). Manual by default: Next, Space, Back; slow auto-play on Play.
+  var stage = document.getElementById('stage');
+  if (stage && window.RaiseStage) {
+    var msgs = [].slice.call(stage.querySelectorAll('[data-step]')).sort(function (a, b) { return a.getAttribute('data-step') - b.getAttribute('data-step'); });
+    var surfaces = [].slice.call(stage.querySelectorAll('[data-surface]'));
+    var surfOf = function (el) { return el.closest('[data-surface]'); };
+    var feedOf = function (sf) { return sf.querySelector('[data-feed]'); };
+    var nearBottom = function (f) { return f.scrollHeight - f.scrollTop - f.clientHeight < 32; };
+    var playBtn = stage.querySelector('[data-act=play]'), counter = stage.querySelector('[data-count-steps]');
+    var eng = window.RaiseStage.create({
+      steps: msgs.map(function (m) { return { text: m.textContent || '' }; }),
+      reducedMotion: reduce.matches,
+      onChange: render,
+    });
+    function render(s, e) {
+      var stick = surfaces.map(function (sf) { var f = feedOf(sf); return !f || nearBottom(f); });
+      msgs.forEach(function (m, i) {
+        var on = i < s.shown; m.classList.toggle('hide', !on);
+        m.classList.toggle('enter', on && s.animate && e === 'next' && i === s.active);
+      });
+      var act = s.active >= 0 ? surfOf(msgs[s.active]) : null;
+      stage.classList.toggle('started', !!act);
+      surfaces.forEach(function (sf, k) {
+        sf.classList.toggle('dim', !!act && sf !== act);
+        var last = null; msgs.forEach(function (m, i) { if (i < s.shown && surfOf(m) === sf) last = m; });
+        sf.querySelector('.shint').textContent = last ? last.getAttribute('data-hint') : 'Step hint (test)';
+        var f = feedOf(sf), nb = sf.querySelector('.newbtn');
+        if (!f) return;
+        if (e === 'restart' || e === 'goto') { f.scrollTop = 0; nb.hidden = true; return; }
+        if (e === 'next' && sf === act) {
+          if (stick[k]) { f.scrollTo({ top: f.scrollHeight, behavior: s.scroll }); nb.hidden = true; }
+          else nb.hidden = false;
+        }
+      });
+      if (playBtn) playBtn.textContent = s.playing ? '❚❚ Pause' : '▶ Play';
+      if (counter) counter.textContent = 'Step ' + s.shown + ' of ' + s.total;
+      stage.querySelectorAll('[data-speed]').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-speed')) === s.speed)); });
+    }
+    surfaces.forEach(function (sf) {
+      var f = feedOf(sf), nb = sf.querySelector('.newbtn');
+      if (!f || !nb) return;
+      f.addEventListener('scroll', function () { if (nearBottom(f)) nb.hidden = true; }, { passive: true });
+      nb.addEventListener('click', function () { f.scrollTo({ top: f.scrollHeight, behavior: eng.state().scroll }); nb.hidden = true; });
+    });
+    stage.querySelector('.stagebar').addEventListener('click', function (ev) {
+      var b = ev.target.closest('button'); if (!b) return;
+      var a = b.getAttribute('data-act'), sp = b.getAttribute('data-speed');
+      if (a === 'next') eng.next(); else if (a === 'back') eng.back(); else if (a === 'play') eng.toggle(); else if (a === 'restart') eng.restart();
+      else if (sp) eng.setSpeed(Number(sp));
+    });
+    // Space = next step, only while the stage is on screen and focus is not on a control or a field.
+    document.addEventListener('keydown', function (ev) {
+      if (ev.code !== 'Space' && ev.key !== ' ') return;
+      if (ev.target.closest && ev.target.closest('button, a, input, textarea, select, [contenteditable]')) return;
+      var r = stage.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;
+      ev.preventDefault(); eng.next();
+    });
+    render(eng.state(), 'restart');
+  }
   // Demo bar "▶ Play the story" links to /#play: scroll to the story and play it.
   function playFromHash() { if (story && play && location.hash === '#play') { story.scrollIntoView({ block: 'start' }); play.click(); } }
   playFromHash(); addEventListener('hashchange', playFromHash);
