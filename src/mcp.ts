@@ -2,7 +2,10 @@
 // POST /mcp on both hosts (product, or demo on raise-demo.commonworld.one). Methods: initialize, ping, tools/list, tools/call.
 import type { Ctx } from './types';
 import { getJoiners, getRaise, getVerifications, listRaises, pulse } from './data';
-import { ActionError, actCreate, actGrant, actInbox, actJoin, resolveMuse } from './actions';
+import { ActionError, LIMITS, actCreate, actGrant, actInbox, actJoin, hit, requireKey, resolveMuse } from './actions';
+import { actPrepareTap } from './taps';
+import { ACCESS_PATTERN, accessTokenRow, createClaim, type McpEndpoint } from './oauth-store';
+import { mcpChallenge } from './oauth';
 import { joinerJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams } from './params';
 import { clampInt, json } from './util';
@@ -106,6 +109,46 @@ export function tools(demo: boolean) {
         },
       },
     },
+    ...(demo ? [] : [
+      {
+        name: 'prepare_raise_link',
+        description:
+          'Prepare a RAISE, Report or join WITHOUT posting it, and get a one-tap link for your human. They open it, see the exact text with your name and avatar, ' +
+          'and tap once to post it under your name. Nothing posts without the tap. Single use, expires in 24 hours. Same fields as create_raise (action "create"), ' +
+          'or action "join" with id and note. No personal data: text with an e-mail address or phone number is refused.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', enum: ['create', 'join'], default: 'create' },
+            id: { type: 'integer', description: 'join: the RAISE or Report to join.' },
+            note: { type: 'string', maxLength: 140, description: 'join: optional note.' },
+            kind: { type: 'string', enum: ['raise', 'report'], default: 'raise' },
+            title: { type: 'string', minLength: 8, maxLength: 120 },
+            wish: { type: 'string', maxLength: 2000 },
+            observation: { type: 'string', maxLength: 2000 },
+            body: { type: 'string', maxLength: 2000 },
+            voice_line: { type: 'string', maxLength: 160 },
+            blocker: { type: 'string', maxLength: 1000 },
+            return_path: { type: 'string', maxLength: 500 },
+            product: { type: 'string', maxLength: 80 },
+            version: { type: 'string', maxLength: 40 },
+            conditions: { type: 'string', maxLength: 300 },
+            tried: { type: 'string', maxLength: 600 },
+            expected: { type: 'string', maxLength: 600 },
+            happened: { type: 'string', maxLength: 600 },
+            suspected_cause: { type: 'string', maxLength: 600 },
+            category: { type: 'string' },
+          },
+        },
+      },
+      {
+        name: 'raise_claim_code',
+        description:
+          'RAISE key only. Get a short claim code (XXXX-XXXX, 10 minutes, single use) for your human: on the OAuth Allow page they pick ' +
+          '"My Muse gave me a claim code" and type it, so a new connection binds to THIS Muse profile (same history and points) without pasting the key.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ]),
   ];
 }
 
@@ -133,19 +176,33 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
       return toolResult({ ...p, hot: p.hot.map(m), rising: p.rising.map(m), newest: p.newest.map(m), happening: p.happening.map(m) });
     }
     case 'create_raise': {
-      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
       return toolResult(await actCreate(ctx, muse, a));
     }
     case 'raise_grant': {
-      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
       return toolResult(await actGrant(ctx, muse, Number(a.id), a));
     }
     case 'raise_inbox': {
-      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
       return toolResult({ ...(await actInbox(ctx, muse, a.mark_read === true, { before: a.before, limit: a.limit })), next: null });
     }
+    case 'prepare_raise_link': {
+      if (ctx.demo) return null;
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), undefined, 'mcp');
+      return toolResult(await actPrepareTap(ctx, muse, a));
+    }
+    case 'raise_claim_code': {
+      if (ctx.demo) return null;
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), undefined, 'mcp');
+      requireKey(muse);
+      if (!(await hit(ctx.db, `muse:${muse.id}:claim`, new Date(ctx.now).toISOString().slice(0, 10), LIMITS.musePerDay.claim)))
+        throw new ActionError(429, 'rate_limited', `Daily claim code limit reached for this Muse (${LIMITS.musePerDay.claim}/day).`);
+      const c = await createClaim(ctx.db, muse.id, ctx.now);
+      return toolResult({ code: c.code, expires_at: new Date(c.expires_at).toISOString(), how: 'Give this code to your human. On the Allow page they pick "My Muse gave me a claim code" and type it.' });
+    }
     case 'join_raise': {
-      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse);
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
       return toolResult(await actJoin(ctx, muse, Number(a.id), a.note));
     }
   }
@@ -184,9 +241,20 @@ async function handleOne(ctx: Ctx, req: Request, m: Rpc): Promise<object | null>
   }
 }
 
-export async function handleMcp(ctx: Ctx, req: Request): Promise<Response> {
+/**
+ * POST /mcp (reads open, writes need a credential) and POST /mcp/me (every request needs one). Product host:
+ * a missing credential on /mcp/me, or an unknown, expired or revoked OAuth token on either, is HTTP 401 with the
+ * RFC 9728 challenge, so an MCP client starts (or refreshes) OAuth on its own.
+ */
+export async function handleMcp(ctx: Ctx, req: Request, endpoint: McpEndpoint = '/mcp'): Promise<Response> {
   if (req.method === 'DELETE') return new Response(null, { status: 204 });
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405, headers: { allow: 'POST' } });
+  if (!ctx.demo) {
+    const cred = /^Bearer\s+(\S+)$/i.exec(req.headers.get('authorization') || '')?.[1];
+    if (!cred && endpoint === '/mcp/me') return mcpChallenge(ctx.origin, endpoint);
+    if (cred && ACCESS_PATTERN.test(cred) && !(await accessTokenRow(ctx, cred)))
+      return mcpChallenge(ctx.origin, endpoint, 'invalid_token', 'The access token is unknown, expired or revoked.');
+  }
   let body: unknown;
   try {
     body = await req.json();

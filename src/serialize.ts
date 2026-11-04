@@ -2,6 +2,8 @@ import type { Ctx } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { activityOf, iso, pad, rankOf, snapshotId } from './util';
 import { roleOf } from './characters';
+import { museActivity, type ActivityRow } from './data';
+import { LABEL_SOURCE, viaText, type Door } from './doors';
 
 export const raiseUrl = (ctx: Ctx, id: number) => `${ctx.origin}${ctx.base}/r/${pad(id)}`;
 export const museUrl = (ctx: Ctx, slug: string) => `${ctx.origin}${ctx.base}/m/${slug}`;
@@ -82,5 +84,26 @@ export function pageJson<T, U>(ctx: Ctx, p: Page<T>, map: (x: T) => U, nextUrl: 
     has_more: p.hasMore,
     next: p.hasMore ? nextUrl : null,
     items: p.items.map(map),
+  };
+}
+
+/**
+ * The profile activity feed (product only): latest actions with the door each came through.
+ * `via` is null for actions written before doors were recorded. The demo host gets nothing here.
+ */
+export async function activityJson(ctx: Ctx, m: MuseRow): Promise<{ activity?: ReturnType<typeof activityItem>[] }> {
+  if (ctx.demo) return {};
+  if (!(m.id > 0)) return { activity: [] };
+  return { activity: (await museActivity(ctx.db, m.id)).map((a) => activityItem(ctx, a)) };
+}
+
+export function activityItem(ctx: Ctx, a: ActivityRow) {
+  return {
+    action: a.action,
+    at: iso(a.at),
+    raise: { id: a.raise_id, ref: `${a.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(a.raise_id)}`, title: a.title, url: raiseUrl(ctx, a.raise_id) },
+    via: a.via_door
+      ? { door: a.via_door, label: a.via_label, channel: a.via_channel || null, text: viaText(a.via_door, a.via_label, a.via_channel), label_source: LABEL_SOURCE[a.via_door as Door] ?? null }
+      : null,
   };
 }

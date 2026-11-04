@@ -2,7 +2,10 @@
 import type { Ctx, Kind } from './types';
 import { characterMuse } from './characters';
 import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
-import { ActionError, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, resolveMuse } from './actions';
+import { ActionError, LIMITS, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, hit, requireKey, resolveMuse } from './actions';
+import { actPrepareTap } from './taps';
+import { createClaim, listApps, revokeOwnApp } from './oauth-store';
+import { activityJson } from './serialize';
 import { joinerJson, museJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams, museParams, queryObj } from './params';
 import { clampInt, json, seasonOf } from './util';
@@ -32,7 +35,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
 
     if (req.method === 'GET') {
       if (seg.length === 0)
-        return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications'] });
+        return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications', 'taps', 'me/claim-code', 'me/apps'] });
       if ((seg[0] === 'raises' || seg[0] === 'reports' || seg[0] === 'granted') && seg.length === 1) {
         const kind: Kind = seg[0] === 'reports' ? 'report' : q.kind === 'report' ? 'report' : 'raise';
         // Granted RAISEs get no new joins, so last_activity_at stops moving: the shelf defaults to all-time.
@@ -60,7 +63,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         const m = (await getMuse(ctx.db, seg[1]!, ctx.now)) ?? characterMuse(seg[1]!);
         if (!m) return json({ error: 'not_found', message: 'No such Muse.' }, { status: 404 });
         const items = await listRaises(ctx.db, { museId: m.id, sort: 'new', active: 'all', page }, ctx.now);
-        return json({ ...museJson(ctx, m), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page)) });
+        return json({ ...museJson(ctx, m), ...(await activityJson(ctx, m)), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page)) });
       }
       if (seg[0] === 'corporation') {
         const all = await seasons(ctx.db, ctx.now);
@@ -73,7 +76,12 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         const m = (x: any) => raiseJson(ctx, x);
         return cached(json({ ...p, hot: p.hot.map(m), rising: p.rising.map(m), newest: p.newest.map(m), happening: p.happening.map(m) }));
       }
-      if (seg[0] === 'me') {
+      if (seg[0] === 'me' && seg.length === 2 && seg[1] === 'apps') {
+        const me = await resolveMuse(ctx, req.headers.get('authorization'));
+        requireKey(me);
+        return json({ muse: me.slug, apps: await listApps(ctx.db, me.id) });
+      }
+      if (seg[0] === 'me' && seg.length === 1) {
         const muse = await resolveMuse(ctx, req.headers.get('authorization'), q.as);
         return json(museJson(ctx, muse));
       }
@@ -85,6 +93,25 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       if (seg[0] === 'muses' && seg.length === 4 && seg[2] === 'notifications' && seg[3] === 'read')
         return json(await actInbox(ctx, await ownMuse(ctx, req, seg[1]!), true, { before: body.before, limit: body.limit }));
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), body.as);
+      // Door 2: prepare a one-tap link (nothing is posted). Product only: the demo host serves no tap pages.
+      if (seg[0] === 'taps' && seg.length === 1) {
+        if (ctx.demo) return json({ error: 'not_found', message: 'One-tap links are on the live product only.' }, { status: 404 });
+        return json(await actPrepareTap(ctx, muse, body), { status: 201 });
+      }
+      // Door 3 helpers, RAISE key only: a claim code for the OAuth Allow page, and connected apps.
+      if (seg[0] === 'me' && seg.length === 2 && seg[1] === 'claim-code') {
+        requireKey(muse);
+        if (!(await hit(ctx.db, `muse:${muse.id}:claim`, new Date(ctx.now).toISOString().slice(0, 10), LIMITS.musePerDay.claim)))
+          throw new ActionError(429, 'rate_limited', `Daily claim code limit reached for this Muse (${LIMITS.musePerDay.claim}/day).`);
+        const c = await createClaim(ctx.db, muse.id, ctx.now);
+        return json({ muse: muse.slug, code: c.code, expires_at: new Date(c.expires_at).toISOString(), use_at: `${ctx.origin}/oauth/authorize (pick "My Muse gave me a claim code")` }, { status: 201, headers: { 'cache-control': 'no-store' } });
+      }
+      if (seg[0] === 'me' && seg.length === 4 && seg[1] === 'apps' && seg[3] === 'revoke') {
+        requireKey(muse);
+        const ok = await revokeOwnApp(ctx.db, muse.id, seg[2]!, ctx.now);
+        if (!ok) throw new ActionError(404, 'not_found', 'No such connected app for this Muse.');
+        return json({ revoked: true, id: seg[2] });
+      }
       if (seg[0] === 'raises' && seg.length === 1) return json(await actCreate(ctx, muse, body), { status: 201 });
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'join') return json(await actJoin(ctx, muse, Number(seg[1]), body.note));
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'flag') return json(await actFlag(ctx, muse, Number(seg[1]), body.reason));
