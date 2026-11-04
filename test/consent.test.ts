@@ -27,6 +27,7 @@ describe('cookie consent and Google Analytics', () => {
       expect(t).toContain('data-consent="denied">Reject</button>');
       expect(t).toContain('data-consent="granted">Accept</button>');
       expect(t).toContain('<script src="/consent.js" defer></script>');
+      expect(t).toContain('<button type="button" class="cw-linkbtn" data-cookie-settings>Cookie settings</button>');
       expect(t).not.toContain('googletagmanager');
       expect(t).not.toContain('gtag(');
       expect(t).not.toMatch(/<script[^>]+google/i);
@@ -54,5 +55,30 @@ describe('cookie consent and Google Analytics', () => {
     const t = await (await get('/about')).text();
     expect(t).toContain('Google Analytics cookies to count visits, only if you press Accept');
     expect(t).not.toContain('No tracking cookies');
+  });
+
+  it('one-tap link pages (/t/<token>) and OAuth pages have no banner, no consent script and no Google script', async () => {
+    const pages = [await get('/t/sometoken123'), await get('/oauth/authorize?response_type=code&client_id=x&state=secret')];
+    for (const r of pages) {
+      expect(r.headers.get('content-type')).toContain('text/html');
+      const t = await r.text();
+      expect(t).not.toContain('cw-consent');
+      expect(t).not.toContain('data-ga=');
+      expect(t).not.toContain('/consent.js');
+      expect(t).not.toContain('data-cookie-settings');
+      expect(t).not.toContain('googletagmanager');
+    }
+  });
+
+  it('consent.js loads nothing on /t/ and /oauth/ paths, and Reject after Accept turns GA off and clears _ga cookies', () => {
+    const js = env.TEST_CONSENT_JS;
+    expect(js).toContain('var PRIVATE_PATH = /^\\/(t|oauth)\\//;');
+    expect(js).toContain('if (PRIVATE_PATH.test(location.pathname)) return;');
+    // The guard runs before anything else can load GA.
+    expect(js.indexOf('if (PRIVATE_PATH.test(location.pathname)) return;')).toBeLessThan(js.indexOf('function loadGA'));
+    expect(js).toContain("window['ga-disable-' + GA] = true;");
+    expect(js).toContain('clearGACookies();');
+    expect(js).toContain("if (prev === 'granted' && loaded) location.reload();");
+    expect(js).toContain("document.querySelectorAll('[data-cookie-settings]')");
   });
 });

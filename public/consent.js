@@ -3,13 +3,18 @@
 // gtag.js is loaded ONLY after "Accept". Nothing from googletagmanager.com before that: the server renders no
 // gtag script, only the hidden banner. The measurement id comes from the banner (data-ga); no banner = no GA.
 // The choice is remembered in localStorage ("cw-consent": granted | denied). "Reject" = never load, and any
-// _ga cookies left from an earlier "Accept" are cleared.
+// _ga cookies left from an earlier "Accept" are cleared. A "Cookie settings" link in the footer ([data-cookie-settings])
+// reopens the banner; Reject after Accept turns GA off at once (ga-disable), clears _ga cookies and reloads the page.
+// Never on a one-tap link (/t/<token>) or an OAuth page: the server renders no banner there, and this script loads
+// nothing on those paths either, so a token in the URL never reaches Google Analytics.
 (function () {
   var store;
   try { store = window.localStorage; } catch (x) { store = null; }
   function get(k) { try { return store && store.getItem(k); } catch (x) { return null; } }
   function set(k, v) { try { store && store.setItem(k, v); } catch (x) {} }
 
+  var PRIVATE_PATH = /^\/(t|oauth)\//;
+  if (PRIVATE_PATH.test(location.pathname)) return;
   var banner = document.querySelector('.cw-consent'), GA = banner && banner.getAttribute('data-ga'), loaded = false;
   function gtagStub() {
     if (window.gtag) return;
@@ -42,6 +47,7 @@
     if (banner) banner.hidden = true;
     if (v === 'granted') loadGA();
     else {
+      if (GA) window['ga-disable-' + GA] = true;
       if (window.gtag) window.gtag('consent', 'update', { analytics_storage: 'denied' });
       clearGACookies();
       if (prev === 'granted' && loaded) location.reload();

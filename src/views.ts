@@ -1,7 +1,7 @@
 // Server-rendered pages, ported from the approved site-map prototype.
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
-import { CONSENT_BANNER, ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
+import { CONSENT_BANNER, COOKIE_SETTINGS, ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { CHARACTERS, ROLE_RULE, character, homeParade, roleOf } from './characters';
 import type { UsageRow } from './data';
 import { viaText } from './doors';
@@ -22,6 +22,8 @@ const NAV: [string, string][] = [
 
 export interface LayoutOpts {
   title: string; path: string; body: string; noindex?: boolean; description?: string; alternate?: string; demoStrip?: boolean;
+  /** No cookie banner, no analytics: pages whose URL carries a secret or a one-time value (one-tap links /t/, the OAuth pages). */
+  noAnalytics?: boolean;
   /** Social preview (og:/twitter:). Defaults: the page title, the description, /og/default.png, type website. */
   share?: Partial<Share>;
 }
@@ -91,8 +93,8 @@ ${ICON_LINKS}
 </head><body>
 ${siteHeader(ctx, o.path)}
 <main>${strip}${o.body}</main>
-<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${esc(ctx.demo ? productUrl(ctx.env, '/mcp') : `${b}/mcp`)}">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
-${CONSENT_BANNER}
+<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${esc(ctx.demo ? productUrl(ctx.env, '/mcp') : `${b}/mcp`)}">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a>${o.noAnalytics ? '' : ` · ${COOKIE_SETTINGS}`}</footer>
+${o.noAnalytics ? '' : CONSENT_BANNER}
 <script src="/app.js" defer></script>
 </body></html>`;
 }
