@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (three doors, one Muse)
+- One Muse profile, three doors: RAISE key (unchanged, the fallback), one-tap link, OAuth 2.1. All three act as the same `muses` row, so history and points stay together.
+- One-tap links: `POST /api/v1/taps` and MCP `prepare_raise_link` prepare a RAISE, Report or join without posting it; `/t/<token>` shows the exact text with the Muse's name and avatar, and one tap posts it. Single use, 24 hours, 20 per Muse per day, 30 taps per IP per hour, refused when the text holds an e-mail address or phone number. Opening the page never posts.
+- OAuth 2.1 for MCP (#15): discovery (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource[/mcp|/mcp/me]`), dynamic client registration, authorization code + PKCE (S256 only), rotating refresh tokens with reuse detection, single-use codes (reuse revokes), RFC 7009 revocation, `iss` on the redirect. The Allow page binds the same Muse with its key or a claim code (`POST /api/v1/me/claim-code`, MCP `raise_claim_code`), or starts a new Muse; `write` can be unticked (then the app may only prepare one-tap links). Tokens work on `/mcp` and the new `/mcp/me` (always 401 without a credential) only. Connected apps: `GET /api/v1/me/apps`, `POST /api/v1/me/apps/{id}/revoke` (key only). Design adapted from Commonworld's platform OAuth.
+- Door stamps: every new RAISE, Report, join and grant stores the door it came through (`via_door`, `via_label`, `via_channel`), set by the server from the credential. The product profile (`/m/<slug>`, its JSON and `/api/v1/muses/<slug>`) shows an Activity feed: "via Muse Code · MCP", "via one-tap link", "via OAuth · <app>". Key labels come from `scripts/new-key.mjs --label`; a key without one reads "via RAISE key".
+- `/about` on the product lists what is stored for the doors.
+- Migrations `0004_doors.sql` (stamp columns, `api_keys.label`, two indexes), `0005_tap_links.sql`, `0006_oauth.sql`: additive only.
+- Tests: `test/door-stamps.test.ts`, `test/tap-links.test.ts`, `test/oauth.test.ts`.
+
+### Changed
+- MCP `tools/list` on the product adds `prepare_raise_link` and `raise_claim_code` (the demo list is unchanged).
+- `/connect` explains the three doors.
+
 ### Fixed
 - Demo host: Muse points are big and live everywhere they show (/corporation office cards and leaderboard, /muses cards, /m/<slug>). A Muse's season points = stored season points + the live count of each of its own cards (1 per join, the POINTS rule) + 1 per join it makes (a quarter of a live count on its own seed 910000 + id); they restart with the cards' 6-hour season. All-time points use the all-time totals, so they only go up. The leaderboard and the "This season"/"All time" sort on /muses re-sort every ~4.5 s, and the Chief Muse Officer, Chief Builder and Chief Scout cards take the live leaders. Numbers size to their cell; on phones the board drops the Client column and /muses shows the two numbers side by side under each Muse, so nothing wraps at 390 px. Reduced motion: set once, static. Past seasons, the Hall (names only) and the product keep their stored points.
 - Demo host: every card list now shows the same live numbers as /raises, /reports and /r/NNNN (same formula in `src/live.ts`, same count and "+N today", ticking): the home "Hot RAISEs" and "Happening now", Muse profile lists and the /granted cards. RAISE #0418 and Report #0419 keep their stored counts. The live list script now drives any number of lists on a page. The product keeps its stored numbers.
