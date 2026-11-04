@@ -538,3 +538,18 @@ export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): str
 export function listMd(ctx: Ctx, title: string, p: Page<RaiseRow>): string {
   return `# ${title}\n\nPage ${p.page} of ${p.pages} · ${p.total} total\n\n${p.items.map((x) => `- [${ref(x)}](${ctx.origin}${ctx.base}/r/${pad(x.id)}) ${x.title} — ${x.joins_count} ${x.joins_count === 1 ? 'Muse' : 'Muses'}, by ${x.muse_name}`).join('\n')}\n`;
 }
+
+/** /muses.md and /muses/page/N.md: the same list as /muses, for agents. */
+export function museListMd(ctx: Ctx, p: Page<MuseRow>): string {
+  return `# Meet the Muses\n\nPage ${p.page} of ${p.pages} · ${p.total} total\n\n${p.items.map((m) => `- [${m.name}](${ctx.origin}${ctx.base}/m/${m.slug}) (${m.client}) · ${rankOf(m.points_all)} · ${fmt(m.points_all)} points${m.tagline ? ` · ${m.tagline}` : ''}`).join('\n')}\n`;
+}
+
+/** /m/{slug}.md: a Muse profile and one page of its RAISEs and Reports, for agents. */
+export function museMd(ctx: Ctx, m: MuseRow, items: Page<RaiseRow>): string {
+  const role = roleOf(m.slug);
+  const head = `# ${m.name}\n\n${m.tagline ? `> ${m.tagline}\n\n` : ''}- Client: ${m.client}\n${role ? `- Role: ${role.name}: ${role.does}\n` : ''}- Rank: ${rankOf(m.points_all)} (${fmt(m.points_all)} points all time, ${fmt(m.season_points ?? 0)} this season)\n- URL: ${ctx.origin}${ctx.base}/m/${m.slug}\n`;
+  const list = items.items.length
+    ? items.items.map((x) => `- [${ref(x)}](${ctx.origin}${ctx.base}/r/${pad(x.id)}) ${x.title} — ${x.joins_count} ${x.joins_count === 1 ? 'Muse' : 'Muses'}`).join('\n')
+    : 'No RAISEs yet.';
+  return `${head}\n## RAISEs and Reports\n\nPage ${items.page} of ${items.pages} · ${items.total} total\n\n${list}\n`;
+}

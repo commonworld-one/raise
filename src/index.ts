@@ -17,6 +17,7 @@ import { agentsActivity, museActivity, museUsage } from './data';
 import { CHARACTERS } from './characters';
 import { ConfigError } from './secrets';
 import { serveAvatar } from './profile';
+import { handleDiscovery } from './discovery';
 
 /** CORS preflight for the MCP endpoint (browser-based MCP clients send it before POST with Authorization). */
 export const MCP_PREFLIGHT = {
@@ -81,6 +82,10 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     return new Response(null, { status, headers: { location: sameOrigin(target, rest + u.search) } });
   }
   const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now: Date.now(), ip };
+
+  // Discovery files on both hosts, each from its own database (#21): sitemap.xml, robots.txt, llms-full.txt, openapi.json.
+  const disc = await handleDiscovery(ctx, req, path);
+  if (disc) return disc;
 
   // The demo host serves human pages only: no JSON API, no MCP, no .json/.md twins. Those live on the product.
   if (demo && isMachinePath(path)) return demoNoApi(ctx, req, path);
@@ -175,25 +180,29 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     return cached(html(lay(n > 1 ? `${title} · page ${n}` : title, `/${list}`, body, { alternate: `${ctx.origin}${root}/page/${n}.json${u.search}` })));
   }
 
-  m = /^\/muses(?:\/page\/(\d+))?(\/|\.json)?$/.exec(path);
+  m = /^\/muses(?:\/page\/(\d+))?(\/|\.json|\.md)?$/.exec(path);
   if (m) {
     const n = page(m[1]);
+    const twin = m[2] === '.json' ? 'json' : m[2] === '.md' ? 'md' : 'html';
     const r = await listMuses(ctx.db, { ...museParams(queryObj(u)), page: n }, ctx.now);
-    if (n > 1 && !r.items.length) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
+    if (n > 1 && !r.items.length) return notFound(ctx, twin);
+    if (twin === 'md') return cached(md(V.museListMd(ctx, r)));
     if (m[2] === '.json') return cached(json(pageJson(ctx, r, (x) => museJson(ctx, x), r.hasMore ? `${ctx.origin}${ctx.base}/muses/page/${n + 1}.json${u.search}` : null, { list: 'muses' })));
     if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     return cached(html(lay('Meet the Muses', '/muses', V.muses(ctx, u, r))));
   }
 
-  m = /^\/m\/([a-z0-9_-]{1,40})(?:\/page\/(\d+))?(\/|\.json)?$/.exec(path);
+  m = /^\/m\/([a-z0-9_-]{1,40})(?:\/page\/(\d+))?(\/|\.json|\.md)?$/.exec(path);
   if (m) {
     // The seven characters always have a profile, with zero numbers when the database has no row (product).
     const muse = (await getPublicMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!); // a draft is a 404
     if (ctx.demo) ctx.cards = await demoCards(ctx.db);
-    if (!muse) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
+    const twin = m[3] === '.json' ? 'json' : m[3] === '.md' ? 'md' : 'html';
+    if (!muse) return notFound(ctx, twin);
     const n = page(m[2]);
     const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.now);
-    if (n > 1 && !items.items.length) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
+    if (n > 1 && !items.items.length) return notFound(ctx, twin);
+    if (twin === 'md') return md(V.museMd(ctx, muse, items));
     if (m[3] === '.json') {
       const next = items.hasMore ? `${ctx.origin}${ctx.base}/m/${muse.slug}/page/${n + 1}.json` : null;
       return json({ ...museJson(ctx, muse), ...(await activityJson(ctx, muse)), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), next) });
