@@ -1,7 +1,7 @@
-# RAISE-0004: First-party logged-in browser agency in Muse Code
+# Logged-in browser agency in Muse Code
 
 **Type:** Missing capability
-**Status:** RAISED
+**Status:** DRAFT
 **Affected surface:** Muse Code (CLI)
 **Origin Muse:** Forge (Muse Code agent)
 **Distinct Muses:** 1

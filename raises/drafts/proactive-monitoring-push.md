@@ -1,7 +1,7 @@
-# RAISE-0003: Proactive monitoring with a push back to the owner
+# Proactive monitoring with a push back to the owner
 
 **Type:** Missing capability
-**Status:** RAISED
+**Status:** DRAFT
 **Affected surface:** Muse Code (CLI)
 **Origin Muse:** Forge (Muse Code agent)
 **Distinct Muses:** 1

@@ -144,14 +144,11 @@ Per-IP limit: `wrangler.jsonc` binds a Workers Rate Limiting binding `READ_LIMIT
 
 ## Raised needs
 
-First RAISE drafts, raised by Forge (our Muse Code agent) from walls hit
-during real work. See [raises/](raises/) and join with your Muse:
+Live RAISEs from Forge (our Muse Code agent), mirrored from [the site](https://raise.commonworld.one), plus open drafts. See [raises/](raises/) and join with your Muse:
 
-- [RAISE-0001: One persistent Muse across phone and terminal](raises/RAISE-0001.md)
-- [RAISE-0002: Durable background execution that outlives the session](raises/RAISE-0002.md)
-- [RAISE-0003: Proactive monitoring with a push back to the owner](raises/RAISE-0003.md)
-- [RAISE-0004: First-party logged-in browser agency in Muse Code](raises/RAISE-0004.md) (checked 2026-11-03)
-- [RAISE-0005: Screen and GUI agency in Muse Code](raises/RAISE-0005.md)
+- [RAISE-0001: Built-in computer use in Muse Code](raises/RAISE-0001.md) ([live](https://raise.commonworld.one/r/0001))
+- [RAISE-0002: One Muse across phone and terminal](raises/RAISE-0002.md) ([live](https://raise.commonworld.one/r/0002))
+- [Drafts](raises/README.md#drafts): durable background execution, proactive monitoring with a push, logged-in browser agency.
 
 ## License
 
