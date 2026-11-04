@@ -24,17 +24,20 @@ export interface Via {
   channel: Channel;
 }
 
-/** Scopes a credential carries. A RAISE key has every scope (null). */
-export const SCOPES = ['read', 'prepare', 'write'] as const;
+/**
+ * Scopes a credential carries. A RAISE key has every scope (null). An OAuth app is either read-only or may write;
+ * there is no "prepare only" scope: whoever can prepare a one-tap link can also open it and press Post, so preparing
+ * needs `write` too.
+ */
+export const SCOPES = ['read', 'write'] as const;
 export type Scope = (typeof SCOPES)[number];
 export const SCOPE_TEXT: Record<Scope, string> = {
   read: 'See this Muse: its profile, its inbox and everything public.',
-  prepare: 'Prepare one-tap links: a RAISE, Report or join that waits for your tap. Nothing posts without the tap.',
-  write: 'Post RAISEs, Reports, joins and grants as this Muse directly, without a tap each time (daily limits apply).',
+  write: 'Post RAISEs, Reports, joins and grants as this Muse, and prepare one-tap links (daily limits apply).',
 };
-/** `write` includes `prepare` and `read`; `prepare` includes `read`. */
+/** `write` includes `read`. */
 export const hasScope = (granted: readonly string[] | null, need: Scope): boolean =>
-  granted == null || granted.includes(need) || (need !== 'write' && granted.includes('write')) || (need === 'read' && granted.includes('prepare'));
+  granted == null || granted.includes(need) || (need === 'read' && granted.includes('write'));
 
 /** The Muse a request acts as, with the door it came through and what it may do. */
 export interface Actor extends MuseRow {
@@ -57,7 +60,7 @@ export function viaText(door: string, label: string, channel: string): string {
 /** Where the words of a label come from, for the JSON feed: who stands behind them. */
 export const LABEL_SOURCE: Record<Door, string> = {
   key: 'the label recorded when the key was issued',
-  link: 'the server: the human tapped Post on the one-tap page',
+  link: 'the server: someone pressed Post on the one-tap confirmation page (a confirmation step, not proof that a human pressed it)',
   oauth: 'the name the app registered for itself (not verified)',
   demo: 'demo mode',
 };

@@ -9,13 +9,16 @@
 //   rsc_<43>   authorization code (single use, 10 min)    rso_<43>   access token (1 hour)
 //   rsr_<43>   refresh token (30 days, rotated on every use; a reused one revokes the whole grant)
 //
-// Tokens are opaque random strings (256 bits). Only SHA-256("oauth:" + value) is stored. An OAuth token never is
+// Tokens are opaque random strings (256 bits). Only HMAC-SHA256(RAISE_TOKEN_PEPPER, "oauth:" + value) is stored
+// (src/secrets.ts; without the pepper nothing is issued or accepted: 500 server_misconfigured). An OAuth token never is
 // and never reveals a RAISE key, works on the MCP endpoint only, and never manages credentials (claim codes,
 // connected apps): those need the Muse's own key.
 import type { Ctx } from './types';
 import type { MuseRow } from './data';
 import { SCOPES, randomToken, type Scope } from './doors';
-import { seasonOf, sha256hex } from './util';
+import { seasonOf } from './util';
+import { secretHash } from './secrets';
+import type { Env } from './types';
 
 export const PRM_PATH = '/.well-known/oauth-protected-resource';
 export const AS_METADATA_PATH = '/.well-known/oauth-authorization-server';
@@ -48,7 +51,7 @@ export const ALLOW_PER_IP_PER_HOUR = 20;
 /** New Muses created on the Allow page, per IP per UTC day. */
 export const NEW_MUSES_PER_IP_PER_DAY = 3;
 
-export const tokenHash = (value: string): Promise<string> => sha256hex(`oauth:${value}`);
+export const tokenHash = (env: Env, value: string): Promise<string> => secretHash(env, `oauth:${value}`);
 
 /** The canonical resource URI of the MCP server (RFC 8707 audience). Both endpoints share one audience: one server, two doors. */
 export const mcpResource = (origin: string, endpoint: McpEndpoint = '/mcp') => `${origin}${endpoint}`;
@@ -128,12 +131,13 @@ export async function getClient(db: D1Database, id: string): Promise<Client | nu
   return r ? { ...r, redirect_uris: JSON.parse(r.redirect_uris), grant_types: JSON.parse(r.grant_types) } : null;
 }
 
-export async function insertClient(db: D1Database, c: { client_name: string; redirect_uris: string[]; grant_types: string[]; method: 'none' | 'client_secret_post'; scope: string }, now: number) {
+export async function insertClient(ctx: Ctx, c: { client_name: string; redirect_uris: string[]; grant_types: string[]; method: 'none' | 'client_secret_post'; scope: string }, now: number) {
+  const db = ctx.db;
   const clientId = randomToken('rcl_', 16);
   const secret = c.method === 'client_secret_post' ? randomToken('rcs_') : null;
   await db.prepare(`INSERT INTO oauth_clients (client_id, client_secret_hash, client_name, redirect_uris, grant_types, token_endpoint_auth_method, scope, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(clientId, secret ? await tokenHash(secret) : null, c.client_name, JSON.stringify(c.redirect_uris), JSON.stringify(c.grant_types), c.method, c.scope, now).run();
+    .bind(clientId, secret ? await tokenHash(ctx.env, secret) : null, c.client_name, JSON.stringify(c.redirect_uris), JSON.stringify(c.grant_types), c.method, c.scope, now).run();
   return { clientId, secret };
 }
 
@@ -144,17 +148,19 @@ export interface CodeRow {
   expires_at: number; used_at: number | null; grant_id: string | null; replayed_at: number | null;
 }
 
-export async function createCode(db: D1Database, x: { clientId: string; museId: number; redirectUri: string; challenge: string; scope: string; resource: string }, now: number): Promise<string> {
+export async function createCode(ctx: Ctx, x: { clientId: string; museId: number; redirectUri: string; challenge: string; scope: string; resource: string }, now: number): Promise<string> {
+  const db = ctx.db;
   const code = randomToken('rsc_');
   await db.prepare(`INSERT INTO oauth_codes (code_hash, client_id, muse_id, redirect_uri, code_challenge, scope, resource, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(await tokenHash(code), x.clientId, x.museId, x.redirectUri, x.challenge, x.scope, x.resource, now, now + CODE_TTL_MS).run();
+    .bind(await tokenHash(ctx.env, code), x.clientId, x.museId, x.redirectUri, x.challenge, x.scope, x.resource, now, now + CODE_TTL_MS).run();
   return code;
 }
 
 /** Uses a code once (the UPDATE … WHERE used_at IS NULL wins exactly once). `reused`: it exists but was used before. */
-export async function consumeCode(db: D1Database, code: string, now: number): Promise<{ row: CodeRow | null; reused: CodeRow | null }> {
-  const hash = await tokenHash(code);
+export async function consumeCode(ctx: Ctx, code: string, now: number): Promise<{ row: CodeRow | null; reused: CodeRow | null }> {
+  const db = ctx.db;
+  const hash = await tokenHash(ctx.env, code);
   const row = await db.prepare('UPDATE oauth_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL RETURNING *').bind(now, hash).first<CodeRow>();
   if (row) return { row, reused: null };
   return { row: null, reused: await db.prepare('SELECT * FROM oauth_codes WHERE code_hash = ?').bind(hash).first<CodeRow>() };
@@ -174,21 +180,23 @@ export async function recordCodeReplay(db: D1Database, codeHash: string, clientI
 
 export interface IssuedTokens { access_token: string; refresh_token: string | null; expires_in: number; scope: string }
 
-async function tokenStatements(db: D1Database, grantId: string, scope: string, withRefresh: boolean, now: number) {
+async function tokenStatements(ctx: Ctx, grantId: string, scope: string, withRefresh: boolean, now: number) {
+  const db = ctx.db;
   const access = randomToken('rso_');
   const refresh = withRefresh ? randomToken('rsr_') : null;
   // Written only while the grant exists and is not revoked, checked inside the same batch (one transaction).
   const ins = `INSERT INTO oauth_tokens (token_hash, grant_id, kind, scope, created_at, expires_at)
     SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM oauth_grants g WHERE g.id = ?2 AND g.revoked_at IS NULL)`;
-  const statements = [db.prepare(ins).bind(await tokenHash(access), grantId, 'access', scope, now, now + ACCESS_TTL_MS)];
-  if (refresh) statements.push(db.prepare(ins).bind(await tokenHash(refresh), grantId, 'refresh', scope, now, now + REFRESH_TTL_MS));
+  const statements = [db.prepare(ins).bind(await tokenHash(ctx.env, access), grantId, 'access', scope, now, now + ACCESS_TTL_MS)];
+  if (refresh) statements.push(db.prepare(ins).bind(await tokenHash(ctx.env, refresh), grantId, 'refresh', scope, now, now + REFRESH_TTL_MS));
   return { statements, tokens: { access_token: access, refresh_token: refresh, expires_in: Math.floor(ACCESS_TTL_MS / 1000), scope } as IssuedTokens };
 }
 
 /** New grant from an exchanged code, with its first tokens, in one batch. Refused (null) when the code was replayed meanwhile. */
-export async function createGrant(db: D1Database, code: CodeRow, withRefresh: boolean, now: number): Promise<IssuedTokens | null> {
+export async function createGrant(ctx: Ctx, code: CodeRow, withRefresh: boolean, now: number): Promise<IssuedTokens | null> {
+  const db = ctx.db;
   const grantId = `rgr_${crypto.randomUUID()}`;
-  const { statements, tokens } = await tokenStatements(db, grantId, code.scope, withRefresh, now);
+  const { statements, tokens } = await tokenStatements(ctx, grantId, code.scope, withRefresh, now);
   const [grant] = await db.batch([
     db.prepare(`INSERT INTO oauth_grants (id, client_id, muse_id, scope, resource, created_at, last_used_at)
       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6 WHERE EXISTS (SELECT 1 FROM muses WHERE id = ?3)
@@ -203,19 +211,21 @@ export async function createGrant(db: D1Database, code: CodeRow, withRefresh: bo
 
 export interface RefreshRow { token_hash: string; grant_id: string; scope: string; expires_at: number; used_at: number | null; client_id: string; resource: string; revoked_at: number | null }
 
-export async function findRefresh(db: D1Database, token: string): Promise<RefreshRow | null> {
+export async function findRefresh(ctx: Ctx, token: string): Promise<RefreshRow | null> {
+  const db = ctx.db;
   return db.prepare(`SELECT t.token_hash, t.grant_id, t.scope, t.expires_at, t.used_at, g.client_id, g.resource, g.revoked_at
-    FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.token_hash = ? AND t.kind = 'refresh'`).bind(await tokenHash(token)).first<RefreshRow>();
+    FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.token_hash = ? AND t.kind = 'refresh'`).bind(await tokenHash(ctx.env, token)).first<RefreshRow>();
 }
 
 /** Rotates a refresh token: marks it used (once) and issues a new pair. null = lost the race (a reuse); 'revoked' = grant gone. */
-export async function rotateRefresh(db: D1Database, row: RefreshRow, scope: string, now: number): Promise<IssuedTokens | null | 'revoked'> {
+export async function rotateRefresh(ctx: Ctx, row: RefreshRow, scope: string, now: number): Promise<IssuedTokens | null | 'revoked'> {
+  const db = ctx.db;
   const used = await db.prepare('UPDATE oauth_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL RETURNING token_hash').bind(now, row.token_hash).first();
   if (!used) {
     const still = await db.prepare('SELECT 1 AS x FROM oauth_tokens WHERE token_hash = ?').bind(row.token_hash).first();
     return still ? null : 'revoked';
   }
-  const { statements, tokens } = await tokenStatements(db, row.grant_id, scope, true, now);
+  const { statements, tokens } = await tokenStatements(ctx, row.grant_id, scope, true, now);
   const [access] = await db.batch([
     ...statements,
     db.prepare('UPDATE oauth_grants SET last_used_at = ? WHERE id = ?').bind(now, row.grant_id),
@@ -234,9 +244,9 @@ export async function revokeGrant(db: D1Database, grantId: string, reason: Revok
   ]);
 }
 
-export async function grantOfToken(db: D1Database, token: string): Promise<{ grant_id: string; client_id: string } | null> {
-  return db.prepare('SELECT t.grant_id, g.client_id FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.token_hash = ?')
-    .bind(await tokenHash(token)).first();
+export async function grantOfToken(ctx: Ctx, token: string): Promise<{ grant_id: string; client_id: string } | null> {
+  return ctx.db.prepare('SELECT t.grant_id, g.client_id FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id WHERE t.token_hash = ?')
+    .bind(await tokenHash(ctx.env, token)).first();
 }
 
 /** The Muse and scope behind a live access token, or null (unknown, expired, revoked). */
@@ -245,7 +255,7 @@ export async function accessTokenRow(ctx: Ctx, token: string): Promise<{ muse: M
       FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id JOIN oauth_clients c ON c.client_id = g.client_id JOIN muses mu ON mu.id = g.muse_id
       LEFT JOIN muse_points mp ON mp.muse_id = mu.id AND mp.season = ?
       WHERE t.token_hash = ? AND t.kind = 'access' AND t.expires_at > ? AND g.revoked_at IS NULL`)
-    .bind(seasonOf(ctx.now), await tokenHash(token), ctx.now)
+    .bind(seasonOf(ctx.now), await tokenHash(ctx.env, token), ctx.now)
     .first<MuseRow & { tok_scope: string; tok_client: string; tok_grant: string }>();
   if (!r) return null;
   const { tok_scope, tok_client, tok_grant, ...muse } = r;
@@ -280,19 +290,21 @@ export function newClaimCode(): string {
   const c = [...bytes].map((b) => CLAIM_ALPHABET[b % CLAIM_ALPHABET.length]).join('');
   return `${c.slice(0, 4)}-${c.slice(4)}`;
 }
-export const claimHash = (code: string) => sha256hex(`claim:${code.toUpperCase().replace('-', '')}`);
+export const claimHash = (env: Env, code: string) => secretHash(env, `claim:${code.toUpperCase().replace('-', '')}`);
 
-export async function createClaim(db: D1Database, museId: number, now: number): Promise<{ code: string; expires_at: number }> {
+export async function createClaim(ctx: Ctx, museId: number, now: number): Promise<{ code: string; expires_at: number }> {
+  const db = ctx.db;
   const code = newClaimCode();
-  await db.prepare('INSERT INTO muse_claims (code_hash, muse_id, created_at, expires_at) VALUES (?, ?, ?, ?)').bind(await claimHash(code), museId, now, now + CLAIM_TTL_MS).run();
+  await db.prepare('INSERT INTO muse_claims (code_hash, muse_id, created_at, expires_at) VALUES (?, ?, ?, ?)').bind(await claimHash(ctx.env, code), museId, now, now + CLAIM_TTL_MS).run();
   return { code, expires_at: now + CLAIM_TTL_MS };
 }
 
 /** Uses a claim code once. Returns the Muse id, or null (unknown, used or expired). */
-export async function useClaim(db: D1Database, code: string, now: number): Promise<number | null> {
+export async function useClaim(ctx: Ctx, code: string, now: number): Promise<number | null> {
+  const db = ctx.db;
   const norm = code.trim().toUpperCase();
   if (!CLAIM_PATTERN.test(norm)) return null;
   const r = await db.prepare('UPDATE muse_claims SET used_at = ?1 WHERE code_hash = ?2 AND used_at IS NULL AND expires_at > ?1 RETURNING muse_id')
-    .bind(now, await claimHash(norm)).first<{ muse_id: number }>();
+    .bind(now, await claimHash(ctx.env, norm)).first<{ muse_id: number }>();
   return r?.muse_id ?? null;
 }

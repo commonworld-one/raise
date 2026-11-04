@@ -21,7 +21,9 @@ export default defineConfig(async () => {
     plugins: [
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations, TEST_DEMO_SEED: demoSeed, TEST_DEMO_JS: demoJs, TEST_DEMO_CSS: demoCss, TEST_AVATARS: avatars, TEST_ICONS: icons, TEST_OG: og, TEST_STYLE_CSS: styleCss, NO_EDGE_CACHE: '1' } },
+        miniflare: { bindings: { TEST_MIGRATIONS: migrations, TEST_DEMO_SEED: demoSeed, TEST_DEMO_JS: demoJs, TEST_DEMO_CSS: demoCss, TEST_AVATARS: avatars, TEST_ICONS: icons, TEST_OG: og, TEST_STYLE_CSS: styleCss, NO_EDGE_CACHE: '1',
+          // Fixed test pepper (production: wrangler secret put RAISE_TOKEN_PEPPER).
+          RAISE_TOKEN_PEPPER: 'test-pepper-0123456789abcdef0123456789abcdef' } },
       }),
     ],
     test: { setupFiles: ['./test/setup.ts'], fileParallelism: false, maxWorkers: 1 },

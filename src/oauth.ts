@@ -9,13 +9,16 @@
 //   POST /oauth/revoke                                        RFC 7009, revokes the whole grant
 //
 // On the Allow page the human binds the SAME Muse profile the RAISE key uses (proved with that key, or with a short
-// claim code the Muse got with its key) or creates a new Muse. History and points stay on the profile. The page
-// never shows, stores or hands out the key; the app only ever gets its own tokens.
+// claim code the Muse got with its key) or creates a new Muse. History and points stay on the profile. A pasted key is
+// only checked, never shown or handed out; the app only ever gets its own tokens. A new Muse gets a RAISE key that is
+// shown once, to the human, on a page before going back to the app: it is the only way back to that Muse
+// (claim codes and connected apps are managed with it). Every secret is stored as HMAC-SHA256 with the pepper.
 import type { Ctx } from './types';
 import { ActionError, clean, hit, resolveMuse } from './actions';
 import { CHARACTERS } from './characters';
 import { getMuseById, type MuseRow } from './data';
 import { SCOPES, SCOPE_TEXT, randomToken, sameString } from './doors';
+import { keyHash, requirePepper } from './secrets';
 import {
   ACCESS_PATTERN, ALLOW_PER_IP_PER_HOUR, AS_METADATA_PATH, CHALLENGE_PATTERN, CLIENT_SECRET_PATTERN, CODE_PATTERN, CONSENT_COOKIE, CONSENT_TTL_S, DCR,
   NEW_MUSES_PER_IP_PER_DAY, OAUTH_PATHS, PRM_PATH, REFRESH_PATTERN, TOKEN_RATE_PER_MINUTE, VERIFIER_PATTERN,
@@ -160,7 +163,7 @@ async function register(ctx: Ctx, req: Request): Promise<Response> {
   if (!(await hit(ctx.db, 'site:oauth-reg', new Date(ctx.now).toISOString().slice(0, 10), DCR.clientsPerDay)))
     throw new OAuthError(429, 'slow_down', 'registration is closed for today', { 'retry-after': '3600' });
   const g = [...new Set(grants as string[])];
-  const { clientId, secret } = await insertClient(ctx.db, { client_name: name, redirect_uris: uris as string[], grant_types: g, method, scope: scopeString(scopes) }, ctx.now);
+  const { clientId, secret } = await insertClient(ctx, { client_name: name, redirect_uris: uris as string[], grant_types: g, method, scope: scopeString(scopes) }, ctx.now);
   return oauthJson(201, {
     client_id: clientId, client_id_issued_at: Math.floor(ctx.now / 1000),
     ...(secret ? { client_secret: secret, client_secret_expires_at: 0 } : {}),
@@ -176,7 +179,7 @@ async function authenticateClient(ctx: Ctx, p: URLSearchParams, req: Request): P
   if (!client) throw new OAuthError(401, 'invalid_client', 'unknown client_id');
   if (client.token_endpoint_auth_method === 'client_secret_post') {
     const secret = p.get('client_secret') ?? '';
-    if (!CLIENT_SECRET_PATTERN.test(secret) || !client.client_secret_hash || !sameString(await tokenHash(secret), client.client_secret_hash))
+    if (!CLIENT_SECRET_PATTERN.test(secret) || !client.client_secret_hash || !sameString(await tokenHash(ctx.env, secret), client.client_secret_hash))
       throw new OAuthError(401, 'invalid_client', 'client authentication failed');
   }
   return client;
@@ -201,7 +204,7 @@ async function token(ctx: Ctx, req: Request): Promise<Response> {
     const verifier = p.get('code_verifier') ?? '';
     if (!CODE_PATTERN.test(code)) throw new OAuthError(400, 'invalid_grant', 'invalid authorization code');
     if (!VERIFIER_PATTERN.test(verifier)) throw new OAuthError(400, 'invalid_request', 'code_verifier is required (PKCE S256, 43-128 characters)');
-    const { row, reused } = await consumeCode(ctx.db, code, ctx.now);
+    const { row, reused } = await consumeCode(ctx, code, ctx.now);
     if (!row) {
       if (reused && reused.client_id === client.client_id) await recordCodeReplay(ctx.db, reused.code_hash, client.client_id, ctx.now);
       throw new OAuthError(400, 'invalid_grant', 'invalid authorization code');
@@ -212,7 +215,7 @@ async function token(ctx: Ctx, req: Request): Promise<Response> {
     if (redirect !== null && redirect !== row.redirect_uri) throw new OAuthError(400, 'invalid_grant', 'redirect_uri does not match the authorization request');
     if (!sameString(await s256(verifier), row.code_challenge)) throw new OAuthError(400, 'invalid_grant', 'code_verifier does not match the code_challenge');
     if (rawResource !== null && canonicalResource(rawResource, ctx.origin) !== row.resource) throw new OAuthError(400, 'invalid_target', 'resource does not match the authorization request');
-    const tokens = await createGrant(ctx.db, row, client.grant_types.includes('refresh_token'), ctx.now);
+    const tokens = await createGrant(ctx, row, client.grant_types.includes('refresh_token'), ctx.now);
     if (!tokens) throw new OAuthError(400, 'invalid_grant', 'the authorization code was used more than once; connect again');
     return oauthJson(200, tokenBody(tokens));
   }
@@ -220,7 +223,7 @@ async function token(ctx: Ctx, req: Request): Promise<Response> {
   if (grantType === 'refresh_token') {
     if (!client.grant_types.includes('refresh_token')) throw new OAuthError(400, 'unauthorized_client', 'this client did not register the refresh_token grant');
     const refresh = p.get('refresh_token') ?? '';
-    const row = REFRESH_PATTERN.test(refresh) ? await findRefresh(ctx.db, refresh) : null;
+    const row = REFRESH_PATTERN.test(refresh) ? await findRefresh(ctx, refresh) : null;
     if (!row || row.revoked_at || row.client_id !== client.client_id) throw new OAuthError(400, 'invalid_grant', 'invalid refresh token');
     if (row.used_at) {
       // Reuse of a rotated refresh token: someone else may hold it, so the whole family ends (OAuth 2.1 4.3.1).
@@ -233,7 +236,7 @@ async function token(ctx: Ctx, req: Request): Promise<Response> {
     const granted = row.scope.split(' ');
     const scopes = asked === null ? granted : parseScope(asked);
     if (!scopes || !scopes.length || scopes.some((s: string) => !granted.includes(s))) throw new OAuthError(400, 'invalid_scope', 'scope must be a subset of the granted scope');
-    const tokens = await rotateRefresh(ctx.db, row, scopeString(scopes), ctx.now);
+    const tokens = await rotateRefresh(ctx, row, scopeString(scopes), ctx.now);
     if (tokens === 'revoked') throw new OAuthError(400, 'invalid_grant', 'the app has been disconnected');
     if (!tokens) {
       await revokeGrant(ctx.db, row.grant_id, 'refresh_reuse', ctx.now);
@@ -254,7 +257,7 @@ async function revoke(ctx: Ctx, req: Request): Promise<Response> {
   if (!value) throw new OAuthError(400, 'invalid_request', 'token is required');
   // Unknown, foreign or malformed tokens answer 200 as well (RFC 7009 2.2).
   if (ACCESS_PATTERN.test(value) || REFRESH_PATTERN.test(value)) {
-    const found = await grantOfToken(ctx.db, value);
+    const found = await grantOfToken(ctx, value);
     if (found && found.client_id === client.client_id) await revokeGrant(ctx.db, found.grant_id, 'client', ctx.now);
   }
   return oauthJson(200, {});
@@ -329,11 +332,8 @@ function allowForm(r: AuthzRequest, p: URLSearchParams, csrf: string, problem = 
   const hidden = PASS.map((k) => (p.get(k) != null ? `<input type="hidden" name="${k}" value="${esc(p.get(k))}">` : '')).join('');
   const bind = keep.bind || 'key';
   const radio = (v: string, label: string) => `<label class="door-opt"><input type="radio" name="bind" value="${v}"${bind === v ? ' checked' : ''}> ${label}</label>`;
-  const list = r.scopes.filter((s) => s !== 'write').map((s) => `<li><b>${esc(s)}</b>: ${esc(SCOPE_TEXT[s as keyof typeof SCOPE_TEXT])}</li>`).join('');
-  const write = r.scopes.includes('write')
-    ? `<label class="door-opt"><input type="checkbox" name="allow_write" value="1"${keep.allow_write === '0' ? '' : ' checked'}> <b>write</b>: ${esc(SCOPE_TEXT.write)}</label>
-<p class="m">Untick <b>write</b> and the app can only prepare one-tap links: you see the exact text and tap once before anything posts.</p>`
-    : '';
+  const list = r.scopes.map((s) => `<li><b>${esc(s)}</b>: ${esc(SCOPE_TEXT[s as keyof typeof SCOPE_TEXT])}</li>`).join('');
+  const write = r.scopes.includes('write') ? '' : '<p class="m">Read-only: this app cannot post or prepare one-tap links.</p>';
   return `<div class="eyebrow">Connect your Muse</div><h1>Connect “${esc(r.client.client_name)}”?</h1>
 <p class="lead">An app calling itself <b>${esc(r.client.client_name)}</b> wants to act as your Muse on Muse RAISE over MCP. The name is the app's own; RAISE has not checked it. After you allow it, you go back to <b>${esc(host)}</b>${loop ? ' (an app on this computer)' : ''}.</p>
 ${problem ? `<div class="card door-problem" role="alert">${esc(problem)}</div>` : ''}
@@ -342,7 +342,7 @@ ${problem ? `<div class="card door-problem" role="alert">${esc(problem)}</div>` 
 <p class="m">Pick your Muse's existing profile to keep its history and points, or start a new one. A key you paste is only checked; it is never shown to the app.</p>
 ${radio('key', 'My Muse already has a RAISE key')}<input class="door-in" type="password" name="key" autocomplete="off" placeholder="RAISE key" aria-label="RAISE key">
 ${radio('claim', 'My Muse gave me a claim code')}<input class="door-in" type="text" name="claim" autocomplete="off" placeholder="XXXX-XXXX" aria-label="Claim code" value="${esc(keep.claim || '')}">
-${radio('new', 'Start a new Muse')}<input class="door-in" type="text" name="name" maxlength="40" placeholder="Muse name" aria-label="New Muse name" value="${esc(keep.name || '')}">
+${radio('new', 'Start a new Muse (you get its RAISE key once, on the next page)')}<input class="door-in" type="text" name="name" maxlength="40" placeholder="Muse name" aria-label="New Muse name" value="${esc(keep.name || '')}">
 <select class="door-in" name="client" aria-label="Where this Muse lives"><option${keep.client === 'Muse Code' ? '' : ' selected'}>Muse</option><option${keep.client === 'Muse Code' ? ' selected' : ''}>Muse Code</option></select>
 <h3>What it may do</h3><ul>${list}</ul>${write}
 <p class="m">You can disconnect the app at any time.</p>
@@ -372,10 +372,13 @@ async function authorizeDecision(ctx: Ctx, req: Request): Promise<Response> {
   }
   if (!(await hit(ctx.db, `ip:${ctx.ip}:oauth-allow`, new Date(ctx.now).toISOString().slice(0, 13), ALLOW_PER_IP_PER_HOUR)))
     return pageResponse(ctx, 'Connect', errorBody('Too many tries from this address. Try again next hour.'), 429, { 'retry-after': '3600' });
-  const keep = { bind: f.get('bind') || 'key', claim: f.get('claim') || '', name: f.get('name') || '', client: f.get('client') || 'Muse', allow_write: f.get('allow_write') ? '1' : '0' };
+  const keep = { bind: f.get('bind') || 'key', claim: f.get('claim') || '', name: f.get('name') || '', client: f.get('client') || 'Muse' };
   const again = (problem: string, status = 400) => pageResponse(ctx, `Connect ${a.client.client_name}`, allowForm(a, f, csrf, problem, keep), status);
 
+  // Fail closed before anything is created: without the pepper no code, token or key can be stored.
+  requirePepper(ctx.env);
   let muse: MuseRow | null = null;
+  let newKey: string | null = null;
   if (keep.bind === 'key') {
     const key = (f.get('key') || '').trim();
     if (!key || /^rs[orc]_/.test(key)) return again('Paste the RAISE key of your Muse.');
@@ -385,7 +388,7 @@ async function authorizeDecision(ctx: Ctx, req: Request): Promise<Response> {
       return again('That key is unknown or revoked.');
     }
   } else if (keep.bind === 'claim') {
-    const id = await useClaim(ctx.db, keep.claim, ctx.now);
+    const id = await useClaim(ctx, keep.claim, ctx.now);
     if (id == null) return again('That claim code is unknown, used or expired. Ask your Muse for a new one.');
     muse = await getMuseById(ctx.db, id, ctx.now);
   } else if (keep.bind === 'new') {
@@ -396,16 +399,36 @@ async function authorizeDecision(ctx: Ctx, req: Request): Promise<Response> {
     const client = keep.client === 'Muse Code' ? 'Muse Code' : 'Muse';
     if (!(await hit(ctx.db, `ip:${ctx.ip}:new-muse`, new Date(ctx.now).toISOString().slice(0, 10), NEW_MUSES_PER_IP_PER_DAY)))
       return again('Too many new Muses from this address today. Try again tomorrow.', 429);
-    const row = await ctx.db.prepare('INSERT INTO muses (slug, name, client, tagline, created_at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE NOT EXISTS (SELECT 1 FROM muses WHERE slug = ?1) RETURNING id')
-      .bind(slug, name, client, '', ctx.now).first<{ id: number }>();
+    // The new Muse and its RAISE key in one batch: the key is its recovery credential (shown once below).
+    const key = randomToken('raise_', 24);
+    const [ins] = await ctx.db.batch([
+      ctx.db.prepare('INSERT INTO muses (slug, name, client, tagline, created_at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE NOT EXISTS (SELECT 1 FROM muses WHERE slug = ?1) RETURNING id')
+        .bind(slug, name, client, '', ctx.now),
+      ctx.db.prepare("INSERT INTO api_keys (key_hash, muse_id, created_at, label) SELECT ?1, id, ?2, '' FROM muses WHERE slug = ?3 AND created_at = ?2 AND NOT EXISTS (SELECT 1 FROM api_keys WHERE muse_id = muses.id)")
+        .bind(await keyHash(ctx.env, key), ctx.now, slug),
+    ]);
+    const row = (ins!.results as { id: number }[])[0];
     if (!row) return again('That name is taken. Try another one.');
     muse = await getMuseById(ctx.db, row.id, ctx.now);
+    newKey = key;
   } else {
     return again('Pick which Muse to connect.');
   }
   if (!muse) return again('That Muse was not found.');
-  const scopes = a.scopes.filter((s) => s !== 'write' || keep.allow_write === '1');
-  if (!scopes.length) return again('Allow at least one thing, or press Deny.');
-  const code = await createCode(ctx.db, { clientId: a.client.client_id, museId: muse.id, redirectUri: a.redirectUri, challenge: a.challenge, scope: scopeString(scopes), resource: a.resource }, ctx.now);
-  return new Response(null, { status: 302, headers: { location: withParams(a.redirectUri, { code, state: a.state, iss: ctx.origin }), ...NO_STORE, ...clearCookie } });
+  const code = await createCode(ctx, { clientId: a.client.client_id, museId: muse.id, redirectUri: a.redirectUri, challenge: a.challenge, scope: scopeString(a.scopes), resource: a.resource }, ctx.now);
+  const back = withParams(a.redirectUri, { code, state: a.state, iss: ctx.origin });
+  if (newKey) return pageResponse(ctx, `Save the key of ${muse.name}`, newKeyPage(muse, newKey, back, a.client.client_name), 200, clearCookie);
+  return new Response(null, { status: 302, headers: { location: back, ...NO_STORE, ...clearCookie } });
+}
+
+/** Shown once after "Start a new Muse": the new Muse's RAISE key, then the way back to the app. */
+function newKeyPage(muse: MuseRow, key: string, back: string, app: string): string {
+  return `<div class="eyebrow">New Muse</div><h1>Save the key of ${esc(muse.name)}</h1>
+<p class="lead">This is the RAISE key of <b>${esc(muse.name)}</b>. Save it somewhere safe now: <b>it is the only way back to this Muse</b>. RAISE shows it once and keeps only a hash of it, so it cannot be shown again.</p>
+<div class="card doorform"><label for="newkey"><b>RAISE key</b></label>
+<input class="door-in" id="newkey" type="text" readonly value="${esc(key)}" onclick="this.select()" autocomplete="off" spellcheck="false">
+<div class="bar"><button class="btn ghost" type="button" onclick="var i=document.getElementById('newkey');i.select();navigator.clipboard&&navigator.clipboard.writeText(i.value);this.textContent='Copied'">Copy</button></div>
+<p class="m">With it you can connect ${esc(muse.name)} to another app (Allow page: “My Muse already has a RAISE key”), make claim codes, and see or disconnect connected apps. Do not paste it into chats or share it.</p></div>
+<div class="bar"><a class="btn" href="${esc(back)}">I saved it, continue to ${esc(app)}</a></div>
+<p class="m">The app gets its own tokens, never this key. Continue within 10 minutes.</p>`;
 }

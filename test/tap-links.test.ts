@@ -1,13 +1,12 @@
-// Door 2: one-tap links. The agent prepares, the human sees the exact text and taps once; nothing posts without the tap.
+// Door 2: one-tap links. The agent prepares, the link page shows the exact text, one tap posts; nothing posts without the tap.
 import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { DEMO, get, makeMuse, post } from './helpers';
+import { DEMO, get, makeMuse, post, tapLink } from './helpers';
 import { LIMITS } from '../src/actions';
 import { TAPS_PER_IP_PER_HOUR } from '../src/taps';
 
 const tapPath = (url: string) => new URL(url).pathname;
-const tap = (url: string, what: 'post' | 'cancel' = 'post', ip = '10.7.0.1') =>
-  get(tapPath(url), { method: 'POST', body: `do=${what}`, headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': ip } });
+const tap = tapLink;
 const prepare = async (key: string, body: Record<string, unknown>, ip = '10.6.0.1') => post('/api/v1/taps', body, key, ip);
 const count = async (museId: number) => (await env.DB.prepare('SELECT COUNT(*) AS n FROM raises WHERE muse_id = ?').bind(museId).first<{ n: number }>())!.n;
 

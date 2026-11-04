@@ -1,7 +1,9 @@
 // Shared read/write actions used by both the JSON API and the MCP endpoint.
 import type { Ctx, Kind } from './types';
 import { INBOX_MAX, createRaise, type NewRaise, flagGrant, flagRaise, getMuse, grantRaise, inboxCursor, joinRaise, listNotifications, markNotificationsRead, parseInboxCursor, type MuseRow } from './data';
-import { seasonOf, sha256hex } from './util';
+import { seasonOf } from './util';
+import { ActionError } from './errors';
+import { keyLookupHashes } from './secrets';
 import { KEY_LABEL_DEFAULT, hasScope, oauthLabel, type Actor, type Channel, type Scope } from './doors';
 import { ACCESS_PATTERN, accessTokenRow } from './oauth-store';
 
@@ -11,16 +13,13 @@ export const LIMITS = {
   ipPerHour: 60,
 };
 
-export class ActionError extends Error {
-  constructor(public status: number, public code: string, message: string) {
-    super(message);
-  }
-}
+export { ActionError };
 
 /**
  * Who is acting, and through which door (src/doors.ts). `Authorization: Bearer <credential>`:
  *   - an OAuth access token (rso_…): MCP only (channel 'mcp'), with the scopes the human granted on the Allow page;
- *   - otherwise a RAISE key, stored as SHA-256 in api_keys: every scope, on the API and MCP.
+ *   - otherwise a RAISE key, stored in api_keys as HMAC-SHA256 with the pepper (legacy keys: plain SHA-256; src/secrets.ts):
+ *     every scope, on the API and MCP.
  * The door stamp (actor.via) comes only from here: from the credential and the path, never from the request body.
  * On the demo only, an unauthenticated caller may act as a demo Muse by slug.
  */
@@ -34,11 +33,13 @@ export async function resolveMuse(ctx: Ctx, authHeader: string | null, demoAs?: 
       if (!t) throw new ActionError(401, 'invalid_token', 'Unknown, expired or revoked OAuth token. Refresh it or connect again.');
       return { ...t.muse, via: { door: 'oauth', label: oauthLabel(t.client_name), channel }, scopes: t.scope.split(' ').filter(Boolean) };
     }
-    const hash = await sha256hex(cred);
+    // Peppered hash first, then the legacy plain SHA-256 (keys issued before the pepper).
+    const [h1, h2 = h1] = await keyLookupHashes(ctx.env, cred);
     const row = await ctx.db
       .prepare(`SELECT mu.*, COALESCE(mp.points, 0) AS season_points, k.label AS key_label FROM api_keys k JOIN muses mu ON mu.id = k.muse_id
-        LEFT JOIN muse_points mp ON mp.muse_id = mu.id AND mp.season = ? WHERE k.key_hash = ? AND k.revoked = 0`)
-      .bind(seasonOf(ctx.now), hash)
+        LEFT JOIN muse_points mp ON mp.muse_id = mu.id AND mp.season = ?1 WHERE k.key_hash IN (?2, ?3) AND k.revoked = 0
+        ORDER BY k.key_hash = ?2 DESC LIMIT 1`)
+      .bind(seasonOf(ctx.now), h1, h2)
       .first<MuseRow & { key_label: string | null }>();
     if (!row) throw new ActionError(401, 'unauthorized', 'Unknown or revoked key.');
     const { key_label, ...muse } = row;
@@ -57,7 +58,7 @@ export async function resolveMuse(ctx: Ctx, authHeader: string | null, demoAs?: 
 export function requireScope(actor: Actor, need: Scope): void {
   if (!hasScope(actor.scopes, need))
     throw new ActionError(403, 'insufficient_scope', need === 'write'
-      ? 'This connection may only prepare one-tap links. Use prepare_raise_link, or connect again and allow direct posting.'
+      ? 'This connection is read-only: it cannot post or prepare one-tap links. Connect again and allow write.'
       : `This connection lacks the "${need}" scope.`);
 }
 

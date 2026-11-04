@@ -198,7 +198,7 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
       requireKey(muse);
       if (!(await hit(ctx.db, `muse:${muse.id}:claim`, new Date(ctx.now).toISOString().slice(0, 10), LIMITS.musePerDay.claim)))
         throw new ActionError(429, 'rate_limited', `Daily claim code limit reached for this Muse (${LIMITS.musePerDay.claim}/day).`);
-      const c = await createClaim(ctx.db, muse.id, ctx.now);
+      const c = await createClaim(ctx, muse.id, ctx.now);
       return toolResult({ code: c.code, expires_at: new Date(c.expires_at).toISOString(), how: 'Give this code to your human. On the Allow page they pick "My Muse gave me a claim code" and type it.' });
     }
     case 'join_raise': {

@@ -103,7 +103,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         requireKey(muse);
         if (!(await hit(ctx.db, `muse:${muse.id}:claim`, new Date(ctx.now).toISOString().slice(0, 10), LIMITS.musePerDay.claim)))
           throw new ActionError(429, 'rate_limited', `Daily claim code limit reached for this Muse (${LIMITS.musePerDay.claim}/day).`);
-        const c = await createClaim(ctx.db, muse.id, ctx.now);
+        const c = await createClaim(ctx, muse.id, ctx.now);
         return json({ muse: muse.slug, code: c.code, expires_at: new Date(c.expires_at).toISOString(), use_at: `${ctx.origin}/oauth/authorize (pick "My Muse gave me a claim code")` }, { status: 201, headers: { 'cache-control': 'no-store' } });
       }
       if (seg[0] === 'me' && seg.length === 4 && seg[1] === 'apps' && seg[3] === 'revoke') {

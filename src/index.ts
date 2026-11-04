@@ -14,6 +14,16 @@ import { demoPage } from './stage';
 import { handleOAuth, isOAuthPath } from './oauth';
 import { tapPage, tapSubmit } from './taps';
 import { museActivity } from './data';
+import { ConfigError } from './secrets';
+
+/** CORS preflight for the MCP endpoint (browser-based MCP clients send it before POST with Authorization). */
+export const MCP_PREFLIGHT = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+  'access-control-allow-headers': 'Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version',
+  'access-control-expose-headers': 'WWW-Authenticate, Mcp-Session-Id, Retry-After',
+  'access-control-max-age': '86400',
+};
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -34,7 +44,14 @@ export default {
       const hit = await cache.match(req);
       if (hit) return hit;
     }
-    const res = await route(req, env, u, ip);
+    let res: Response;
+    try {
+      res = await route(req, env, u, ip);
+    } catch (e) {
+      // Fail closed without RAISE_TOKEN_PEPPER: nothing is issued or accepted (src/secrets.ts).
+      if (!(e instanceof ConfigError)) throw e;
+      res = json({ error: e.code, message: e.message }, { status: 500, headers: { 'cache-control': 'no-store' } });
+    }
     if (cacheable && cache && res.status === 200 && (res.headers.get('cache-control') || '').includes('public'))
       ec.waitUntil(cache.put(req, res.clone()));
     return res;
@@ -67,6 +84,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   // Door 3: OAuth 2.1 discovery, registration, the Allow page, token and revoke (product only; the demo 404s them above).
   if (isOAuthPath(path)) return handleOAuth(ctx, req, path);
   if (path === '/mcp' || path === '/mcp/me') {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: MCP_PREFLIGHT });
     if (req.method === 'GET' && (req.headers.get('accept') || '').includes('text/html'))
       return html(V.layout(ctx, { title: 'RAISE over MCP', path: '/mcp', body: V.mcpPage(ctx, tools(ctx.demo).map((t) => t.name)) }));
     return handleMcp(ctx, req, path);
@@ -76,7 +94,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (tap) {
     if (ctx.demo) return notFound(ctx, 'html');
     if (req.method === 'POST') return tapSubmit(ctx, req, tap[1]!);
-    if (req.method === 'GET' || req.method === 'HEAD') return tapPage(ctx, tap[1]!);
+    if (req.method === 'GET' || req.method === 'HEAD') return tapPage(ctx, req, tap[1]!);
     return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, POST' } });
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method Not Allowed', { status: 405 });

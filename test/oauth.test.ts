@@ -42,10 +42,10 @@ async function refresh(clientId: string, token: string) {
 }
 
 /** Full flow for an existing Muse proved with its key. */
-async function connect(m: { key: string }, opts: { scope?: string; allowWrite?: boolean; name?: string } = {}) {
+async function connect(m: { key: string }, opts: { scope?: string; name?: string } = {}) {
   const c = await register(opts.name);
   const { verifier, challenge } = pkce();
-  const r = await authorize(c.client_id, { bind: 'key', key: m.key, ...(opts.allowWrite === false ? {} : { allow_write: '1' }) }, { scope: opts.scope, challenge: await challenge });
+  const r = await authorize(c.client_id, { bind: 'key', key: m.key }, { scope: opts.scope, challenge: await challenge });
   expect(r.status).toBe(302);
   const loc = new URL(r.headers.get('location')!);
   const t = await exchange(c.client_id, loc.searchParams.get('code')!, verifier);
@@ -63,7 +63,7 @@ describe('OAuth discovery', () => {
     const as = (await (await get('/.well-known/oauth-authorization-server')).json()) as any;
     expect(as).toMatchObject({ issuer: BASE, authorization_endpoint: `${BASE}/oauth/authorize`, token_endpoint: `${BASE}/oauth/token`, registration_endpoint: `${BASE}/oauth/register`, code_challenge_methods_supported: ['S256'] });
     const prm = (await (await get('/.well-known/oauth-protected-resource/mcp')).json()) as any;
-    expect(prm).toMatchObject({ resource: `${BASE}/mcp`, authorization_servers: [BASE], scopes_supported: ['read', 'prepare', 'write'] });
+    expect(prm).toMatchObject({ resource: `${BASE}/mcp`, authorization_servers: [BASE], scopes_supported: ['read', 'write'] });
     expect(((await (await get('/.well-known/oauth-protected-resource/mcp/me')).json()) as any).resource).toBe(`${BASE}/mcp/me`);
   });
   it('/mcp/me without a credential is 401 with the challenge; /mcp still reads without one', async () => {
@@ -83,7 +83,7 @@ describe('OAuth flow', () => {
     const m = await makeMuse('oauthsame');
     await post('/api/v1/raises', { title: 'Posted with the key first', wish: 'Before OAuth.' }, m.key);
     const { tokens } = await connect(m, { name: 'Muse Code CLI' });
-    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 3600, scope: 'read prepare write' });
+    expect(tokens).toMatchObject({ token_type: 'Bearer', expires_in: 3600, scope: 'read write' });
     expect(tokens.access_token).toMatch(/^rso_/);
     expect(tokens.refresh_token).toMatch(/^rsr_/);
     expect(JSON.stringify(tokens)).not.toContain(m.key);
@@ -101,7 +101,7 @@ describe('OAuth flow', () => {
     const m = await makeMuse('oauthpkce');
     const c = await register();
     const { verifier, challenge } = pkce();
-    const r = await authorize(c.client_id, { bind: 'key', key: m.key, allow_write: '1' }, { challenge: await challenge });
+    const r = await authorize(c.client_id, { bind: 'key', key: m.key }, { challenge: await challenge });
     const code = new URL(r.headers.get('location')!).searchParams.get('code')!;
     const bad = await exchange(c.client_id, code, verifier.slice(0, -1) + (verifier.endsWith('a') ? 'b' : 'a'));
     expect(bad.status).toBe(400);
@@ -174,15 +174,16 @@ describe('OAuth flow', () => {
     expect(((await r.json()) as any).error).toBe('wrong_audience');
   });
 
-  it('without "write" the app can only prepare one-tap links', async () => {
+  it('a read-only app can neither post nor prepare one-tap links', async () => {
     const m = await makeMuse('oauthprep');
-    const { tokens } = await connect(m, { allowWrite: false });
-    expect(tokens.scope).toBe('read prepare');
+    const { tokens } = await connect(m, { scope: 'read' });
+    expect(tokens.scope).toBe('read');
     const no = await call('create_raise', { title: 'Direct post is refused', wish: 'No.' }, tokens.access_token);
     expect(no.structuredContent.error).toBe('insufficient_scope');
     const link = await call('prepare_raise_link', { title: 'Prepared over OAuth link', wish: 'Tap me.' }, tokens.access_token);
-    expect(link.isError).toBe(false);
-    expect(link.structuredContent.url).toMatch(/\/t\/rtl_/);
+    expect(link.isError).toBe(true);
+    expect(link.structuredContent.error).toBe('insufficient_scope');
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM tap_links WHERE muse_id = ?').bind(m.id).first('n')).toBe(0);
     const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM raises WHERE muse_id = ?').bind(m.id).first('n');
     expect(n).toBe(0);
   });
@@ -193,7 +194,7 @@ describe('OAuth flow', () => {
     expect(cc.code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
     const c = await register();
     const { verifier, challenge } = pkce();
-    const r = await authorize(c.client_id, { bind: 'claim', claim: cc.code.toLowerCase(), allow_write: '1' }, { challenge: await challenge });
+    const r = await authorize(c.client_id, { bind: 'claim', claim: cc.code.toLowerCase() }, { challenge: await challenge });
     expect(r.status).toBe(302);
     const t = await exchange(c.client_id, new URL(r.headers.get('location')!).searchParams.get('code')!, verifier);
     await call('create_raise', { title: 'Posted after a claim code', wish: 'Same Muse.' }, t.body.access_token);
@@ -206,11 +207,19 @@ describe('OAuth flow', () => {
   it('can start a new Muse', async () => {
     const c = await register();
     const { verifier, challenge } = pkce();
-    const r = await authorize(c.client_id, { bind: 'new', name: 'Lumen Brand New', client: 'Muse', allow_write: '1' }, { challenge: await challenge });
-    expect(r.status).toBe(302);
-    const t = await exchange(c.client_id, new URL(r.headers.get('location')!).searchParams.get('code')!, verifier);
+    const r = await authorize(c.client_id, { bind: 'new', name: 'Lumen Brand New', client: 'Muse' }, { challenge: await challenge });
+    // The new Muse's RAISE key is shown once, then the human continues to the app.
+    expect(r.status).toBe(200);
+    const html = await r.text();
+    const key = /id="newkey" type="text" readonly value="(raise_[A-Za-z0-9_-]{32})"/.exec(html)![1]!;
+    const back = /<a class="btn" href="([^"]+)">I saved it/.exec(html)![1]!.replace(/&amp;/g, '&');
+    const t = await exchange(c.client_id, new URL(back).searchParams.get('code')!, verifier);
     const me = await call('raise_inbox', {}, t.body.access_token);
     expect(me.structuredContent.muse).toBe('lumen-brand-new');
+    // The key works for the same Muse (the way back), and it is stored peppered, never in plain.
+    const viaKey = (await (await get('/api/v1/me', { headers: { authorization: `Bearer ${key}` } })).json()) as any;
+    expect(viaKey.slug).toBe('lumen-brand-new');
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM api_keys WHERE key_hash = ?').bind(key).first('n')).toBe(0);
     const taken = await authorize(c.client_id, { bind: 'new', name: 'Atlas' });
     expect(taken.status).toBe(400);
   });

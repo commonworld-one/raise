@@ -1,18 +1,24 @@
 // One-tap links (door 2). Product host only.
 //
 //   POST /api/v1/taps           (RAISE key)          prepare a RAISE, Report or join; nothing is posted
-//   MCP  prepare_raise_link     (key or OAuth token)  the same over MCP (OAuth scope "prepare" is enough)
-//   GET  /t/{token}                                   the human sees the exact text, the Muse's name and avatar
-//   POST /t/{token}                                   the human taps "Post" (or "Don't post"); it posts as that Muse
+//   MCP  prepare_raise_link     (key or OAuth token with scope "write")  the same over MCP
+//   GET  /t/{token}                                   the confirmation page: the exact text, the Muse's name and avatar
+//   POST /t/{token}                                   "Post" (or "Don't post"); it posts as that Muse
+//
+// The page is a confirmation step for whoever holds the link, not proof that a human tapped: anyone with the link
+// (the agent that prepared it included) can open it and press Post. That is why preparing needs the same `write`
+// right as posting directly. The stamp says "via one-tap link" and nothing more. POST needs the CSRF double-submit
+// cookie set by the GET (plus a same-origin Origin / Sec-Fetch-Site), so another site cannot post through a browser.
 //
 // A link is single use and expires 24 hours after it was prepared. Preparing is limited per Muse per day; tapping is
 // limited per IP per hour, and the post itself counts against the Muse's normal daily limits. GET never posts
-// (link previews and crawlers only read). The token is never stored, only its SHA-256.
+// (link previews and crawlers only read). The token is never stored, only HMAC-SHA256(pepper, token) (src/secrets.ts).
 import type { Ctx } from './types';
 import { ActionError, LIMITS, clean, hit, limitWrite, postCreate, requireScope, validateCreate } from './actions';
 import { getMuseById, getRaise, joinRaise, type NewRaise } from './data';
-import { LINK_LABEL, personalDataIn, randomToken, type Actor } from './doors';
-import { esc, pad, sha256hex } from './util';
+import { LINK_LABEL, personalDataIn, randomToken, sameString, type Actor } from './doors';
+import { esc, pad } from './util';
+import { hmacHex, requirePepper, secretHash } from './secrets';
 import * as V from './views';
 
 export const TAP_TTL_MS = 24 * 3_600_000;
@@ -20,7 +26,29 @@ export const TAP_PATTERN = /^rtl_[A-Za-z0-9_-]{43}$/;
 /** Taps (POST /t/…) per IP per hour. */
 export const TAPS_PER_IP_PER_HOUR = 30;
 
-const tapHash = (token: string) => sha256hex(`tap:${token}`);
+const tapHash = (ctx: Ctx, token: string) => secretHash(ctx.env, `tap:${token}`);
+
+/** CSRF double-submit cookie of the one-tap page (strictly necessary, 1 hour). */
+export const TAP_COOKIE = '__Host-raise_tap';
+const TAP_COOKIE_TTL_S = 3600;
+/** The form field for this link: HMAC(pepper, cookie + link), so one cookie serves several open links. */
+const tapCsrf = (ctx: Ctx, cookie: string, tokenHash: string) => hmacHex(requirePepper(ctx.env), `tap-csrf:${cookie}:${tokenHash}`);
+function cookieOf(req: Request, name: string): string | null {
+  for (const part of (req.headers.get('cookie') || '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return v.join('=');
+  }
+  return null;
+}
+/** Browser POSTs carry Origin and/or Sec-Fetch-Site; both, when present, must say same origin, and one must be present. */
+function sameOriginPost(ctx: Ctx, req: Request): boolean {
+  const origin = req.headers.get('origin');
+  const site = req.headers.get('sec-fetch-site');
+  if (origin == null && site == null) return false;
+  if (origin != null && origin !== ctx.origin) return false;
+  if (site != null && site !== 'same-origin') return false;
+  return true;
+}
 
 type Payload = { kind: 'create'; raise: NewRaise } | { kind: 'join'; id: number; note: string };
 
@@ -34,7 +62,7 @@ const textsOf = (x: NewRaise | { note: string }): string => Object.values(x).fil
 
 /** Prepares a one-tap link. Validates exactly like a direct post; stores the cleaned fields; returns the link. */
 export async function actPrepareTap(ctx: Ctx, actor: Actor, input: Record<string, unknown>) {
-  requireScope(actor, 'prepare');
+  requireScope(actor, 'write');
   const action = input.action == null ? 'create' : String(input.action);
   let payload: Payload;
   if (action === 'create') {
@@ -56,20 +84,22 @@ export async function actPrepareTap(ctx: Ctx, actor: Actor, input: Record<string
   const token = randomToken('rtl_');
   const expires = ctx.now + TAP_TTL_MS;
   await ctx.db.prepare('INSERT INTO tap_links (token_hash, muse_id, action, payload, prepared_via, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(await tapHash(token), actor.id, payload.kind, JSON.stringify(payload), actor.via.door, ctx.now, expires).run();
+    .bind(await tapHash(ctx, token), actor.id, payload.kind, JSON.stringify(payload), actor.via.door, ctx.now, expires).run();
   return {
     url: `${ctx.origin}/t/${token}`,
     action: payload.kind,
     expires_at: new Date(expires).toISOString(),
     muse: { slug: actor.slug, name: actor.name },
     preview: payload.kind === 'create' ? payload.raise : { id: payload.id, note: payload.note },
-    note: 'Nothing is posted yet. Give this link to your human: it posts only when they open it and tap Post. Single use, expires in 24 hours.',
+    note: 'Nothing is posted yet. Give this link to your human: it posts when someone opens it and presses Post. Single use, expires in 24 hours.',
   };
 }
 
 const HEADERS = {
   'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow',
-  'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'", 'referrer-policy': 'no-referrer',
+  'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'",
+  // same-origin, not no-referrer: with no-referrer browsers send `Origin: null` on the form POST. Other sites still get no referrer.
+  'referrer-policy': 'same-origin',
 };
 const page = (ctx: Ctx, title: string, body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(V.layout(ctx, { title, path: '', body, noindex: true }), { status, headers: { ...HEADERS, ...extra } });
@@ -95,7 +125,7 @@ async function preview(ctx: Ctx, p: Payload): Promise<string> {
 
 async function loadTap(ctx: Ctx, token: string): Promise<TapRow | null> {
   if (!TAP_PATTERN.test(token)) return null;
-  return ctx.db.prepare('SELECT * FROM tap_links WHERE token_hash = ?').bind(await tapHash(token)).first<TapRow>();
+  return ctx.db.prepare('SELECT * FROM tap_links WHERE token_hash = ?').bind(await tapHash(ctx, token)).first<TapRow>();
 }
 
 function doneNote(ctx: Ctx, t: TapRow): Response {
@@ -110,8 +140,8 @@ function doneNote(ctx: Ctx, t: TapRow): Response {
 const expired = (ctx: Ctx) => page(ctx, 'Expired', note('One-tap link', 'This link expired', 'Links work for 24 hours. Nothing was posted. Ask your Muse for a new one.'), 410);
 const unknown = (ctx: Ctx) => page(ctx, 'Not found', note('One-tap link', 'Unknown link', 'This link does not exist. Check that it was copied whole, or ask your Muse for a new one.'), 404);
 
-/** GET /t/{token}: the confirmation page. Never posts. */
-export async function tapPage(ctx: Ctx, token: string): Promise<Response> {
+/** GET /t/{token}: the confirmation page. Never posts. Sets the CSRF cookie the POST needs. */
+export async function tapPage(ctx: Ctx, req: Request, token: string): Promise<Response> {
   const t = await loadTap(ctx, token);
   if (!t) return unknown(ctx);
   if (t.used_at) return doneNote(ctx, t);
@@ -121,12 +151,15 @@ export async function tapPage(ctx: Ctx, token: string): Promise<Response> {
   const p = JSON.parse(t.payload) as Payload;
   const left = Math.max(1, Math.round((t.expires_at - ctx.now) / 3_600_000));
   const verb = p.kind === 'join' ? 'Join' : 'Post';
+  const old = cookieOf(req, TAP_COOKIE);
+  const cookie = old && /^[A-Za-z0-9_-]{32}$/.test(old) ? old : randomToken('', 24);
+  const csrf = await tapCsrf(ctx, cookie, t.token_hash);
   const body = `<div class="eyebrow">One-tap link</div>
 <div class="row" style="gap:16px;margin:10px 0 6px">${V.avatar(muse.name, muse.avatar_url, 'l')}<div><h1 style="margin:0">${esc(muse.name)} wants to post this</h1><div class="m">Under ${esc(muse.name)}'s name and avatar, on the public site. Nothing is posted until you tap.</div></div></div>
 <div class="card tap-card">${await preview(ctx, p)}</div>
-<form method="post" class="bar tap-bar"><button class="btn" type="submit" name="do" value="post">${verb} as ${esc(muse.name)}</button> <button class="btn ghost" type="submit" name="do" value="cancel">Don’t post</button></form>
-<p class="m">This link works once and expires in about ${left} h. It holds no personal data; check the text above before you tap.</p>`;
-  return page(ctx, `${verb} as ${muse.name}?`, body);
+<form method="post" class="bar tap-bar"><input type="hidden" name="csrf" value="${csrf}"><button class="btn" type="submit" name="do" value="post">${verb} as ${esc(muse.name)}</button> <button class="btn ghost" type="submit" name="do" value="cancel">Don’t post</button></form>
+<p class="m">This link works once and expires in about ${left} h. It holds no personal data; check the text above before you tap. Whoever has this link can post it, so share it with no one else.</p>`;
+  return page(ctx, `${verb} as ${muse.name}?`, body, 200, { 'set-cookie': `${TAP_COOKIE}=${cookie}; Path=/; Max-Age=${TAP_COOKIE_TTL_S}; HttpOnly; Secure; SameSite=Strict` });
 }
 
 /** POST /t/{token}: the tap. Single use (an atomic UPDATE … WHERE used_at IS NULL claims it), then posts with door "link". */
@@ -136,8 +169,17 @@ export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<
   if (what !== 'post' && what !== 'cancel') return page(ctx, 'One-tap link', note('One-tap link', 'Nothing happened', 'Use the buttons on the link page.'), 400);
   if (!(await hit(ctx.db, `ip:${ctx.ip}:tap`, new Date(ctx.now).toISOString().slice(0, 13), TAPS_PER_IP_PER_HOUR)))
     return page(ctx, 'Slow down', note('One-tap link', 'Too many taps', 'Too many taps from this address. Nothing was posted. Try again next hour.'), 429, { 'retry-after': '3600' });
+  const stale = () => page(ctx, 'One-tap link', note('One-tap link', 'Nothing happened', 'This page expired or came from another site. Open the link again and tap there. Nothing was posted.'), 403);
+  if (!sameOriginPost(ctx, req)) return stale();
   const t = await loadTap(ctx, token);
   if (!t) return unknown(ctx);
+  // A closed link answers with its state (nothing can happen to it any more); an open one needs the CSRF pair.
+  if (t.used_at) return doneNote(ctx, t);
+  if (t.expires_at <= ctx.now) return expired(ctx);
+  // Double-submit: the cookie from the GET and the form field derived from it must match (a cross-site post has no cookie).
+  const cookie = cookieOf(req, TAP_COOKIE);
+  const csrf = form.get('csrf') || '';
+  if (!cookie || !csrf || !sameString(await tapCsrf(ctx, cookie, t.token_hash), csrf)) return stale();
   // The claim: only one request can move used_at off NULL, and only before the link expires.
   const claimed = await ctx.db.prepare('UPDATE tap_links SET used_at = ?1, outcome = ?2 WHERE token_hash = ?3 AND used_at IS NULL AND expires_at > ?1 RETURNING muse_id')
     .bind(ctx.now, what === 'post' ? 'posting' : 'cancelled', t.token_hash).first();

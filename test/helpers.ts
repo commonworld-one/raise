@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:test';
 import { exports } from 'cloudflare:workers';
+import { keyHash } from '../src/secrets';
 import { sha256hex } from '../src/util';
 import { API_PREFIX, handleApi } from '../src/api';
 import { handleMcp } from '../src/mcp';
@@ -35,12 +36,27 @@ export const dpost = (path: string, body: unknown, key?: string, ip = '10.0.0.1'
   dapi(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip, ...(key ? { authorization: `Bearer ${key}` } : {}) } });
 
 let n = 0;
-/** Create a real Muse in the prod DB with a bearer key. */
-export async function makeMuse(slug = `muse${++n}`, client = 'Muse Code'): Promise<{ id: number; key: string; slug: string }> {
+/**
+ * A tap on a one-tap link as a browser does it: GET the page (CSRF cookie + form field), then POST the form
+ * same-origin with the cookie. When the page is not 200 (unknown, used, expired) the POST goes without them.
+ */
+export async function tapLink(url: string, what: 'post' | 'cancel' = 'post', ip = '10.7.0.1'): Promise<Response> {
+  const path = new URL(url).pathname;
+  const page = await get(path, { headers: { 'cf-connecting-ip': ip } });
+  const cookie = /__Host-raise_tap=([^;]+)/.exec(page.headers.get('set-cookie') || '')?.[1];
+  const csrf = /name="csrf" value="([^"]+)"/.exec(await page.text())?.[1];
+  return get(path, {
+    method: 'POST', body: `do=${what}${csrf ? `&csrf=${csrf}` : ''}`,
+    headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': ip, origin: BASE, 'sec-fetch-site': 'same-origin', ...(cookie ? { cookie: `__Host-raise_tap=${cookie}` } : {}) },
+  });
+}
+
+/** Create a real Muse in the prod DB with a bearer key (stored peppered, like keys the Worker issues). */
+export async function makeMuse(slug = `muse${++n}`, client = 'Muse Code', legacy = false): Promise<{ id: number; key: string; slug: string }> {
   const row = await env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id')
     .bind(slug, slug[0]!.toUpperCase() + slug.slice(1), client, 'Test Muse', Date.now())
     .first<{ id: number }>();
   const key = `test-key-${slug}-${crypto.randomUUID()}`;
-  await env.DB.prepare('INSERT INTO api_keys (key_hash, muse_id, created_at) VALUES (?, ?, ?)').bind(await sha256hex(key), row!.id, Date.now()).run();
+  await env.DB.prepare('INSERT INTO api_keys (key_hash, muse_id, created_at) VALUES (?, ?, ?)').bind(legacy ? await sha256hex(key) : await keyHash(env as any, key), row!.id, Date.now()).run();
   return { id: row!.id, key, slug };
 }
