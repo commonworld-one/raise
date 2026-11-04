@@ -28,13 +28,17 @@ header.site a{text-decoration:none;color:inherit}
 header.site .brand{font-family:Manrope,system-ui,sans-serif;font-weight:700;font-size:24px;letter-spacing:-1px;display:flex;align-items:center;gap:10px;white-space:nowrap}
 header.site .brand span{font-size:12px;letter-spacing:2px;border-left:1px solid var(--h-line);padding-left:12px;font-weight:800}
 header.site .menu{display:contents}header.site .navtoggle{display:none}
-header.site nav{display:flex;gap:4px;flex-wrap:wrap}header.site nav a{padding:7px 12px;border-radius:999px;color:var(--h-mute);font-weight:500;font-size:14px}header.site nav a:hover{color:var(--h-acc)}
+header.site nav{display:flex;gap:4px;flex-wrap:nowrap}header.site nav a{padding:7px 12px;border-radius:999px;color:var(--h-mute);font-weight:500;font-size:14px;white-space:nowrap}header.site nav a:hover{color:var(--h-acc)}
 header.site nav a.on{background:var(--h-surf);color:var(--h-ink);font-weight:600}header.site nav a.demo{color:var(--h-acc);font-weight:600}
 header.site .sp{flex:1}header.site .cw{color:var(--h-mute);font-weight:500;font-size:14px;padding:4px 0 4px 22px;margin-left:-4px;line-height:20px;border-left:1px solid var(--h-line);white-space:nowrap}header.site .cw:hover{color:var(--h-acc)}
 header.site .theme{border:1px solid var(--h-line);background:var(--h-card);color:var(--h-ink);border-radius:999px;height:40px;padding:0 14px;cursor:pointer;font:600 13px "DM Sans",system-ui,sans-serif;white-space:nowrap}
 #frame .demobar{background:var(--solid);color:#fff;border-radius:12px;padding:8px 14px;margin:0 0 18px;font-weight:600;font-size:14px}#frame .demobar a{color:#fff;text-decoration:underline}
 html{scroll-padding-top:96px}
-@media (max-width:860px){
+/* Header: one row, labels never wrap (mirrors public/style.css): tighter spacing, then Commonworld hides, then the menu collapses */
+header.site .brand,header.site .cw,header.site .theme{flex-shrink:0}
+@media (max-width:1180px){header.site{gap:16px;padding:0 20px}header.site nav{gap:2px}header.site nav a{padding:7px 9px}}
+@media (max-width:1020px){header.site .cw{display:none}}
+@media (max-width:920px){
   header.site{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}header.site .cw{display:none}
   header.site .brand{flex:1}header.site .navtoggle{display:inline-flex;align-items:center;border:1px solid var(--h-line);background:var(--h-card);color:var(--h-ink);border-radius:999px;height:40px;padding:0 14px;font:600 13px "DM Sans",system-ui,sans-serif;cursor:pointer}
   html:not(.js) header.site .navtoggle{display:none}
