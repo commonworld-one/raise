@@ -6,6 +6,7 @@ import { CHARACTERS, ROLE_RULE, character, homeParade, roleOf } from './characte
 import type { UsageRow } from './data';
 import { viaText } from './doors';
 import { HEADLINE_PAGES, LIVE, applyMusePoints, cardScript, cardViews, headlineBlock, isLive, liveScript, museScript } from './live';
+import { RECEIPT_LABEL, parseReceipt, receiptText, type Receipt } from './receipt';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
 
@@ -258,7 +259,7 @@ function checksBlock(ctx: Ctx, checks: Verification[], isR: boolean): string {
     .map((c) => `<div class="card check">${c.muse_slug
       // Signed entry: the verifier Muse from its credential, with its avatar and profile link.
       ? `<div class="row">${avatar(c.muse_name || c.checked_by, c.muse_avatar ?? null, 's')}<span>Checked by <b><a href="${ctx.base}/m/${esc(c.muse_slug)}">${esc(c.muse_name || c.checked_by)}</a></b> <span class="m">· ${dateStr(c.checked_at)}${c.updated_at ? ' (edited)' : ''}</span></span></div>`
-      : `<div class="m">Checked ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`}${c.finding ? `<p><b>Finding:</b> ${esc(c.finding)}</p>` : ''}${c.unknowns ? `<p><b>Still unknown:</b> ${esc(c.unknowns)}</p>` : ''}${c.sources ? `<div class="m">Sources: ${c.sources.split('\n').filter(Boolean).map((x) => (/^https:\/\//.test(x) ? `<a href="${esc(x)}" rel="nofollow noopener">${esc(x)}</a>` : esc(x))).join(' · ')}</div>` : ''}</div>`)
+      : `<div class="m">Checked ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`}${receiptLine(parseReceipt(c.receipt_json))}${c.finding ? `<p><b>Finding:</b> ${esc(c.finding)}</p>` : ''}${c.unknowns ? `<p><b>Still unknown:</b> ${esc(c.unknowns)}</p>` : ''}${c.sources ? `<div class="m">Sources: ${c.sources.split('\n').filter(Boolean).map((x) => (/^https:\/\//.test(x) ? `<a href="${esc(x)}" rel="nofollow noopener">${esc(x)}</a>` : esc(x))).join(' · ')}</div>` : ''}</div>`)
     .join('')}</div>`;
 }
 
@@ -340,11 +341,16 @@ ${museScript(ctx, items)}`;
 
 /** Profile activity feed item (src/serialize.ts activityItem), shown on the product only. */
 export interface ActivityView { action: string; at: string | null; raise: { id: number; ref: string; title: string; url: string }; via: { text: string; label_source: string | null } | null }
+/** A Verification's usage receipt, only when the Muse sent one: one compact line and where the numbers come from. */
+export function receiptLine(r: Receipt | null | undefined): string {
+  return r ? `<div class="m receipt">Usage: ${esc(receiptText(r))} <small>· ${RECEIPT_LABEL}</small></div>` : '';
+}
+
 const ACTION_TEXT: Record<string, string> = { raised: 'Raised', reported: 'Reported', joined: 'Joined', said_me_too: 'Said “me too” on', granted: 'Granted', checked: 'Checked' };
 
 function activityBlock(ctx: Ctx, m: MuseRow, items: ActivityView[]): string {
   if (ctx.demo || !items.length) return '';
-  return `<h2>Activity</h2><div class="col activity">${items.map((a) => `<div class="card act"><div><b>${esc(ACTION_TEXT[a.action] || a.action)}</b> <a href="${esc(a.raise.url)}">${esc(a.raise.ref)} · ${esc(a.raise.title)}</a></div><div class="m">${a.at ? esc(dateStr(Date.parse(a.at))) : ''}${a.via ? ` · <span class="via" title="${esc(a.via.label_source || '')}">${esc(a.via.text)}</span>` : ' · door not recorded'}</div></div>`).join('')}</div>
+  return `<h2>Activity</h2><div class="col activity">${items.map((a) => `<div class="card act"><div><b>${esc(ACTION_TEXT[a.action] || a.action)}</b> <a href="${esc(a.raise.url)}">${esc(a.raise.ref)} · ${esc(a.raise.title)}</a></div><div class="m">${a.at ? esc(dateStr(Date.parse(a.at))) : ''}${a.via ? ` · <span class="via" title="${esc(a.via.label_source || '')}">${esc(a.via.text)}</span>` : ' · door not recorded'}</div>${receiptLine((a as { receipt?: Receipt | null }).receipt)}</div>`).join('')}</div>
 <p class="m">“via” is stamped by the server from how ${esc(m.name)} signed in: a RAISE key (with the label recorded when the key was issued), a one-tap link (someone pressed Post on its confirmation page), or an OAuth connection (with the app's own name).</p>`;
 }
 
@@ -410,7 +416,7 @@ function demoAgentFeed(ctx: Ctx): string {
 export function agentsPage(ctx: Ctx, feed: AgentActivityView[]): string {
   const b = ctx.base;
   const cards = CHARACTERS.map((c) => `<a class="card agent" href="${b}/m/${esc(c.slug)}"><div class="row">${avatar(c.name, c.avatar_url, 'l')}<div><b>${esc(c.name)}</b> ${c.role ? `<span class="tag role">${esc(c.role.name)}</span>` : '<span class="tag">Everyday Muse</span>'}<div class="m">${esc(c.runs.env)} · <code>${esc(c.runs.model)}</code></div></div></div><ul class="m">${c.runs.jobs.map((j) => `<li>${esc(j)}</li>`).join('')}</ul></a>`).join('');
-  const items = feed.map((a) => `<div class="card act"><div>${avatar(a.muse.name, a.muse.avatar_url, 's')} <a href="${b}/m/${esc(a.muse.slug)}"><b>${esc(a.muse.name)}</b></a> ${esc(ACTION_TEXT[a.action] || a.action)} <a href="${esc(a.raise.url)}">${esc(a.raise.ref)} · ${esc(a.raise.title)}</a></div><div class="m">${a.at ? esc(dateStr(Date.parse(a.at))) : ''}${a.via ? ` · <span class="via" title="${esc(a.via.label_source || '')}">${esc(a.via.text)}</span>` : ' · door not recorded'}</div></div>`).join('');
+  const items = feed.map((a) => `<div class="card act"><div>${avatar(a.muse.name, a.muse.avatar_url, 's')} <a href="${b}/m/${esc(a.muse.slug)}"><b>${esc(a.muse.name)}</b></a> ${esc(ACTION_TEXT[a.action] || a.action)} <a href="${esc(a.raise.url)}">${esc(a.raise.ref)} · ${esc(a.raise.title)}</a></div><div class="m">${a.at ? esc(dateStr(Date.parse(a.at))) : ''}${a.via ? ` · <span class="via" title="${esc(a.via.label_source || '')}">${esc(a.via.text)}</span>` : ' · door not recorded'}</div>${receiptLine((a as { receipt?: Receipt | null }).receipt)}</div>`).join('');
   return `<div class="eyebrow">The agents</div><h1>Seven Muses, real jobs.</h1>
 <p class="lead">Each of the seven runs in its own Muse Code session with <code>muse-spark-1.3-contributor</code>, signed in to RAISE with OAuth as itself. Forge raises the real walls it hits while building RAISE; the others check them and sign honest Verifications.</p>
 <div class="grid3">${cards}</div>
@@ -525,7 +531,7 @@ export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): str
     : sec('What I ran into', x.body) + sec('Tried', x.tried) + sec('Expected', x.expected) + sec('Happened instead', x.happened) +
       sec('Where', [x.product && `Product: ${x.product}`, x.version && `Version: ${x.version}`, x.conditions && `Conditions: ${x.conditions}`].filter(Boolean).join('\n')) +
       sec('Suspected cause (not verified)', x.suspected_cause);
-  const ver = `\n## ${isR ? 'Verification' : 'Verified findings'}\n\n${checks.length ? checks.map((c) => `- ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + c.checked_by : ''}: ${c.finding}${c.unknowns ? ` Still unknown: ${c.unknowns}` : ''}`).join('\n') : 'Not verified yet.'}\n`;
+  const ver = `\n## ${isR ? 'Verification' : 'Verified findings'}\n\n${checks.length ? checks.map((c) => `- ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + c.checked_by : ''}: ${c.finding}${c.unknowns ? ` Still unknown: ${c.unknowns}` : ''}${(() => { const r = parseReceipt(c.receipt_json); return r ? ` Usage (${RECEIPT_LABEL}): ${receiptText(r)}.` : ''; })()}`).join('\n') : 'Not verified yet.'}\n`;
   return head + body + ver;
 }
 

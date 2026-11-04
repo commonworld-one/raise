@@ -5,6 +5,7 @@ import { CHARACTERS, characterMuse, type Character } from './characters';
 import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
 import type { Via } from './doors';
 import { PUBLIC_MUSE_SQL, isDraft } from './draft';
+import type { Receipt } from './receipt';
 
 /** A write with no recorded door (the default before migration 0004, and in direct data calls). */
 export const NO_VIA: Via = { door: '', label: '', channel: '' };
@@ -145,11 +146,13 @@ export interface Verification {
   checked_at: number; checked_by: string; sources: string; finding: string; unknowns: string;
   /** The signing Muse (migration 0008); null for older unsigned entries, which keep their free-text checked_by. */
   muse_slug?: string | null; muse_name?: string | null; muse_avatar?: string | null; updated_at?: number | null;
+  /** Optional usage receipt, self-reported by the Muse (migration 0011, src/receipt.ts); null when none was sent. */
+  receipt_json?: string | null;
 }
 /** The append-only verification log (#4), oldest first. */
 export async function getVerifications(db: D1Database, raiseId: number): Promise<Verification[]> {
   const r = await db
-    .prepare(`SELECT v.checked_at, v.checked_by, v.sources, v.finding, v.unknowns, v.updated_at, m.slug AS muse_slug, m.name AS muse_name, m.avatar_url AS muse_avatar
+    .prepare(`SELECT v.checked_at, v.checked_by, v.sources, v.finding, v.unknowns, v.updated_at, v.receipt_json, m.slug AS muse_slug, m.name AS muse_name, m.avatar_url AS muse_avatar
       FROM verifications v LEFT JOIN muses m ON m.id = v.muse_id WHERE v.raise_id = ? ORDER BY v.checked_at, v.id`)
     .bind(raiseId)
     .all<Verification>();
@@ -532,6 +535,8 @@ export interface ActivityRow {
   action: 'raised' | 'reported' | 'joined' | 'said_me_too' | 'granted' | 'checked';
   raise_id: number; kind: Kind; title: string; at: number;
   via_door: string; via_label: string; via_channel: string;
+  /** "checked" rows only: the Verification's self-reported usage receipt (src/receipt.ts), else null. */
+  receipt_json?: string | null;
 }
 
 /**
@@ -543,17 +548,17 @@ export async function museActivity(db: D1Database, museId: number, limit = 20): 
   const r = await db
     .prepare(`SELECT * FROM (
         SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
-               r.via_door, r.via_label, r.via_channel, 0 AS ord
+               r.via_door, r.via_label, r.via_channel, NULL AS receipt_json, 0 AS ord
           FROM raises r WHERE r.muse_id = ?1 AND r.hidden = 0
         UNION ALL
         SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
-               j.via_door, j.via_label, j.via_channel, 1
+               j.via_door, j.via_label, j.via_channel, NULL, 1
           FROM joins j JOIN raises r ON r.id = j.raise_id WHERE j.muse_id = ?1 AND r.muse_id != ?1 AND r.hidden = 0
         UNION ALL
-        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, 2
+        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, NULL, 2
           FROM grants g JOIN raises r ON r.id = g.raise_id WHERE g.muse_id = ?1 AND g.hidden = 0 AND r.hidden = 0
         UNION ALL
-        SELECT 'checked', r.id, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, 3
+        SELECT 'checked', r.id, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, v.receipt_json, 3
           FROM verifications v JOIN raises r ON r.id = v.raise_id WHERE v.muse_id = ?1 AND r.hidden = 0
       ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?2`)
     .bind(museId, limit)
@@ -582,19 +587,19 @@ export async function agentsActivity(db: D1Database, slugs: string[], limit = 40
   const r = await db
     .prepare(`SELECT * FROM (
         SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
-               r.via_door, r.via_label, r.via_channel, m.slug, m.name, m.avatar_url, 0 AS ord
+               r.via_door, r.via_label, r.via_channel, NULL AS receipt_json, m.slug, m.name, m.avatar_url, 0 AS ord
           FROM raises r JOIN muses m ON m.id = r.muse_id WHERE m.slug IN (${marks}) AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
         SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
-               j.via_door, j.via_label, j.via_channel, m.slug, m.name, m.avatar_url, 1
+               j.via_door, j.via_label, j.via_channel, NULL, m.slug, m.name, m.avatar_url, 1
           FROM joins j JOIN raises r ON r.id = j.raise_id JOIN muses m ON m.id = j.muse_id
           WHERE m.slug IN (${marks}) AND r.muse_id != j.muse_id AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
-        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, m.slug, m.name, m.avatar_url, 2
+        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, NULL, m.slug, m.name, m.avatar_url, 2
           FROM grants g JOIN raises r ON r.id = g.raise_id JOIN muses m ON m.id = g.muse_id
           WHERE m.slug IN (${marks}) AND g.hidden = 0 AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
-        SELECT 'checked', r.id, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, m.slug, m.name, m.avatar_url, 3
+        SELECT 'checked', r.id, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, v.receipt_json, m.slug, m.name, m.avatar_url, 3
           FROM verifications v JOIN raises r ON r.id = v.raise_id JOIN muses m ON m.id = v.muse_id
           WHERE m.slug IN (${marks}) AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
       ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?1`)
@@ -618,7 +623,7 @@ export async function museUsage(db: D1Database, museId: number): Promise<UsageRo
   return r.results;
 }
 
-export interface NewVerification { sources: string[]; finding: string; unknowns: string }
+export interface NewVerification { sources: string[]; finding: string; unknowns: string; receipt?: Receipt | null }
 export type VerifyResult = { ok: true; verification_id: number; edited: boolean; checks_count: number } | { ok: false; error: 'not_found' | 'own_raise' };
 /**
  * A verifier Muse signs a check on a RAISE or Report: one entry per Muse per item (a second call edits it).
@@ -630,11 +635,11 @@ export async function addVerification(db: D1Database, muse: { id: number; name: 
   if (!r) return { ok: false, error: 'not_found' };
   if (r.muse_id === muse.id) return { ok: false, error: 'own_raise' };
   const res = await db.batch<{ id?: number; updated_at?: number | null; checks_count?: number }>([
-    db.prepare(`INSERT INTO verifications (raise_id, muse_id, checked_at, checked_by, sources, finding, unknowns, created_at, via_door, via_label, via_channel) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?3, ?8, ?9, ?10)
+    db.prepare(`INSERT INTO verifications (raise_id, muse_id, checked_at, checked_by, sources, finding, unknowns, created_at, via_door, via_label, via_channel, receipt_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?3, ?8, ?9, ?10, ?11)
       ON CONFLICT (raise_id, muse_id) WHERE muse_id IS NOT NULL DO UPDATE SET checked_at = excluded.checked_at, checked_by = excluded.checked_by,
         sources = excluded.sources, finding = excluded.finding, unknowns = excluded.unknowns, updated_at = excluded.checked_at,
-        via_door = excluded.via_door, via_label = excluded.via_label, via_channel = excluded.via_channel
-      RETURNING id, updated_at`).bind(raiseId, muse.id, now, muse.name, v.sources.join('\n'), v.finding, v.unknowns, via.door, via.label, via.channel),
+        via_door = excluded.via_door, via_label = excluded.via_label, via_channel = excluded.via_channel, receipt_json = excluded.receipt_json
+      RETURNING id, updated_at`).bind(raiseId, muse.id, now, muse.name, v.sources.join('\n'), v.finding, v.unknowns, via.door, via.label, via.channel, v.receipt ? JSON.stringify(v.receipt) : null),
     db.prepare('UPDATE raises SET checks_count = (SELECT COUNT(*) FROM verifications WHERE raise_id = ?1) WHERE id = ?1 RETURNING checks_count').bind(raiseId),
   ]);
   const row = res[0]!.results[0]!;

@@ -7,6 +7,7 @@ import { keyLookupHashes } from './secrets';
 import { KEY_LABEL_DEFAULT, hasScope, oauthLabel, type Actor, type Channel, type Scope } from './doors';
 import { ACCESS_PATTERN, accessTokenRow } from './oauth-store';
 import { requireComplete } from './draft';
+import { validateReceipt } from './receipt';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
 export const LIMITS = {
@@ -212,7 +213,7 @@ export function validateVerification(input: Record<string, unknown>): NewVerific
   const unknowns = clean(input.unknowns, 10000);
   if (unknowns.length > VERIFY_MAX.unknowns) throw new ActionError(400, 'bad_unknowns', `unknowns is at most ${VERIFY_MAX.unknowns} characters.`);
   if (LINKISH.test(unknowns)) throw new ActionError(400, 'bad_unknowns', 'No links in unknowns: put them in sources.');
-  return { sources: [...new Set(sources)], finding, unknowns };
+  return { sources: [...new Set(sources)], finding, unknowns, receipt: validateReceipt(input.receipt) };
 }
 
 /**

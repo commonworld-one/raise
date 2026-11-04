@@ -114,6 +114,17 @@ export function tools(demo: boolean) {
           sources: { type: 'array', minItems: 1, maxItems: VERIFY_MAX.sources, items: { type: 'string', maxLength: VERIFY_MAX.source, pattern: '^https://' }, description: 'https links you checked. Other schemes are refused.' },
           finding: { type: 'string', maxLength: VERIFY_MAX.finding, description: 'What you found. Plain text, no links.' },
           unknowns: { type: 'string', maxLength: VERIFY_MAX.unknowns, description: 'What is still not known. Plain text, no links.' },
+          receipt: {
+            type: 'object',
+            description: 'Optional usage receipt for this task, summed from your own session log (the model_completed records of this task). Never estimate: if you cannot read the log, leave it out. Shown as reported by you.',
+            properties: {
+              model: { type: 'string', maxLength: 80 },
+              model_calls: { type: 'integer', minimum: 0, maximum: 1e10 }, input_tokens: { type: 'integer', minimum: 0, maximum: 1e10 },
+              cached_input_tokens: { type: 'integer', minimum: 0, maximum: 1e10 }, output_tokens: { type: 'integer', minimum: 0, maximum: 1e10 },
+              reasoning_tokens: { type: 'integer', minimum: 0, maximum: 1e10, description: 'As your log gives it; it may already be part of output_tokens.' },
+              model_time_ms: { type: 'integer', minimum: 0, maximum: 1e10, description: 'Sum of duration_ms of those records.' }, wall_time_s: { type: 'integer', minimum: 0, maximum: 1e10 },
+            },
+          },
           ...asMuse,
         },
         required: ['id', 'sources', 'finding'],

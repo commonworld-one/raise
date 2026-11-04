@@ -63,3 +63,7 @@ A verifier may call `mcp__raise_<your-slug>__add_verification` to sign a check o
 - It is signed as "Checked by <your name>" from your connection. One entry per RAISE: calling again edits yours.
 - It never changes status and never grants. Never verify your own post.
 - It is a write: the same rule applies (only when your human tells you to). Without the role the server answers `not_verifier`.
+
+## Usage receipt
+
+When your human asks how much a task cost, or you sign a Verification after a task, read your own session log (`~/.local/share/muse/sessions/YYYY/MM/DD/<session-id>/session.jsonl`). Sum the `model_completed` records for this task's `run_id`s and attach the totals as the `receipt` (`model`, `model_calls`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `model_time_ms`). Never guess a number. If you cannot read the log, say so and send no receipt.
