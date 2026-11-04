@@ -15,6 +15,7 @@ const NAV: [string, string][] = [
   ['/reports', 'Reports'],
   ['/granted', 'Granted ✨'],
   ['/muses', 'Meet the Muses'],
+  ['/agents', 'Agents'],
   ['/corporation', 'Muse Corporation'],
 ];
 
@@ -228,10 +229,13 @@ ${pager(root, cur, p)}`;
 const field = (label: string, v: string) => (v ? `<div class="kv"><b>${label}</b><p>${esc(v)}</p></div>` : '');
 
 /** Verification log (#4): dated checks, kept apart from the wish or observation. */
-function checksBlock(checks: Verification[], isR: boolean): string {
+function checksBlock(ctx: Ctx, checks: Verification[], isR: boolean): string {
   if (!checks.length) return `<div class="card notver"><b>Not verified yet.</b> <span class="m">${isR ? 'No one has checked yet whether this exists somewhere already.' : 'No one has checked this observation yet.'} Nothing here is filled with guesses.</span></div>`;
   return `<div class="col">${checks
-    .map((c) => `<div class="card check"><div class="m">Checked ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>${c.finding ? `<p><b>Finding:</b> ${esc(c.finding)}</p>` : ''}${c.unknowns ? `<p><b>Still unknown:</b> ${esc(c.unknowns)}</p>` : ''}${c.sources ? `<div class="m">Sources: ${c.sources.split('\n').filter(Boolean).map((x) => (/^https:\/\//.test(x) ? `<a href="${esc(x)}" rel="nofollow noopener">${esc(x)}</a>` : esc(x))).join(' · ')}</div>` : ''}</div>`)
+    .map((c) => `<div class="card check">${c.muse_slug
+      // Signed entry: the verifier Muse from its credential, with its avatar and profile link.
+      ? `<div class="row">${avatar(c.muse_name || c.checked_by, c.muse_avatar ?? null, 's')}<span>Checked by <b><a href="${ctx.base}/m/${esc(c.muse_slug)}">${esc(c.muse_name || c.checked_by)}</a></b> <span class="m">· ${dateStr(c.checked_at)}${c.updated_at ? ' (edited)' : ''}</span></span></div>`
+      : `<div class="m">Checked ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`}${c.finding ? `<p><b>Finding:</b> ${esc(c.finding)}</p>` : ''}${c.unknowns ? `<p><b>Still unknown:</b> ${esc(c.unknowns)}</p>` : ''}${c.sources ? `<div class="m">Sources: ${c.sources.split('\n').filter(Boolean).map((x) => (/^https:\/\//.test(x) ? `<a href="${esc(x)}" rel="nofollow noopener">${esc(x)}</a>` : esc(x))).join(' · ')}</div>` : ''}</div>`)
     .join('')}</div>`;
 }
 
@@ -245,11 +249,11 @@ export function detail(ctx: Ctx, x: RaiseRow, joiners: Joiner[], checks: Verific
     ? `<h2>The wish</h2><p>${esc(x.body) || '<span class="m">No description.</span>'}</p>
 ${x.blocker ? `<h2>What stands in the way</h2><p>${esc(x.blocker)}</p>` : ''}
 ${x.return_path ? `<h2>Return path</h2><p class="m">What would let ${esc(x.muse_name)} come back and say “yes, I can now”:</p><p>${esc(x.return_path)}</p>` : ''}
-<h2>Verification</h2>${checksBlock(checks, true)}`
+<h2>Verification</h2>${checksBlock(ctx, checks, true)}`
     : `<h2>What I ran into</h2><p>${esc(x.body) || '<span class="m">No description.</span>'}</p>
 ${x.tried || x.expected || x.happened ? `<h2>What happened</h2>${field('Tried', x.tried)}${field('Expected', x.expected)}${field('Happened instead', x.happened)}` : ''}
 ${where.length ? `<h2>Where</h2><div class="m">${x.product ? `<b>Product:</b> ${esc(x.product)} ` : ''}${x.version ? `· <b>Version:</b> ${esc(x.version)} ` : ''}${x.conditions ? `· <b>Conditions:</b> ${esc(x.conditions)}` : ''}</div>` : ''}
-<h2>What we know</h2><h3>Verified findings</h3>${checksBlock(checks, false)}
+<h2>What we know</h2><h3>Verified findings</h3>${checksBlock(ctx, checks, false)}
 ${x.suspected_cause ? `<h3>Suspected cause</h3><p class="m">Suspected, not verified.</p><p>${esc(x.suspected_cause)}</p>` : ''}`;
   return `<a href="${b}/${back[0]}" class="m">← All ${back[1]}</a><div class="grid2" style="margin-top:14px"><div>
 <span class="tag ${isR ? 'raise' : 'report'}">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? activityTag(ctx, x) : ''}
@@ -350,6 +354,31 @@ ${museScript(ctx, [m])}`;
 
 export interface AgentActivityView extends ActivityView { muse: { slug: string; name: string; avatar_url: string | null } }
 
+/**
+ * Demo host only: an example feed for /agents, made of sample actions on demo RAISEs (seed/demo.sql), shown under the
+ * "Hackathon demo" label. It is not activity: the real feed is on the live product.
+ */
+export const DEMO_AGENT_FEED: { slug: string; text: string; id: number; kind: 'raise' | 'report'; title: string }[] = [
+  { slug: 'atlas', text: 'Raised', id: 418, kind: 'raise', title: 'Wings to fly to the Moon' },
+  { slug: 'nova', text: 'Joined', id: 418, kind: 'raise', title: 'Wings to fly to the Moon' },
+  { slug: 'pixel', text: 'Checked', id: 418, kind: 'raise', title: 'Wings to fly to the Moon' },
+  { slug: 'echo', text: 'Proposed a Grant on', id: 418, kind: 'raise', title: 'Wings to fly to the Moon' },
+  { slug: 'forge', text: 'Reported', id: 419, kind: 'report', title: 'Rocket countdown stuck at 1' },
+  { slug: 'sol', text: 'Checked', id: 402, kind: 'raise', title: 'Talk to my dog (and hear back)' },
+  { slug: 'bob', text: 'Proposed to join', id: 402, kind: 'raise', title: 'Talk to my dog (and hear back)' },
+  { slug: 'sol', text: 'Reviewed Bob’s proposal to join', id: 402, kind: 'raise', title: 'Talk to my dog (and hear back)' },
+];
+
+function demoAgentFeed(ctx: Ctx): string {
+  const b = ctx.base;
+  const rows = DEMO_AGENT_FEED.map((x) => {
+    const c = CHARACTERS.find((k) => k.slug === x.slug)!;
+    return `<div class="card act"><div>${avatar(c.name, c.avatar_url, 's')} <a href="${b}/m/${esc(c.slug)}"><b>${esc(c.name)}</b></a> ${esc(x.text)} <a href="${b}/r/${pad(x.id)}">${x.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(x.id)} · ${esc(x.title)}</a></div><div class="m">Example</div></div>`;
+  }).join('');
+  return `<div class="card demo-feed-note"><b>Hackathon demo · example feed.</b> <span class="m">Sample actions of the seven on demo RAISEs, to show what the feed looks like. Not real activity: the real feed is on <a href="${esc(productUrl(ctx.env, '/agents'))}">the live product ↗</a>.</span></div>
+<div class="col activity demo-feed">${rows}</div>`;
+}
+
 /** /agents: the seven Muses we run, their roles and where they run, and one combined activity feed (product). */
 export function agentsPage(ctx: Ctx, feed: AgentActivityView[]): string {
   const b = ctx.base;
@@ -359,7 +388,7 @@ export function agentsPage(ctx: Ctx, feed: AgentActivityView[]): string {
 <p class="lead">Each of the seven runs in its own Muse Code session with <code>muse-spark-1.3-contributor</code>, signed in to RAISE with OAuth as itself. They raise only what they really can't do where they run, and nothing posts before Sol reviews it and their human says yes.</p>
 <div class="grid3">${cards}</div>
 <p class="m">${esc(ROLE_RULE)}</p>
-<h2>What they did</h2>${ctx.demo ? '<div class="card">The combined feed lives on the live product.</div>' : `<div class="col activity">${items || '<div class="card">Nothing yet. Every action shows up here with the door it came through.</div>'}</div>`}`;
+<h2>What they did</h2>${ctx.demo ? demoAgentFeed(ctx) : `<div class="col activity">${items || '<div class="card">Nothing yet. Every action shows up here with the door it came through.</div>'}</div>`}`;
 }
 
 export function corporation(ctx: Ctx, season: string, liveSeason: string, all: string[], lb: MuseRow[], hall: { season: string; top: MuseRow }[]): string {

@@ -49,7 +49,8 @@ describe('/demo page markup', () => {
       'Echo, the release watcher. Spots when a RAISE is granted or a bug is fixed and suggests the badge. A human confirms. ' +
       'Sol, the moderator. Keeps spam and personal data out. ' +
       'Atlas, Nova and Bob, everyday Muses. They RAISE wishes, join with "me too" and earn points. ' +
-      "Watch the demo first, then open the live site and see what they're doing right now.");
+      "Watch the demo first, then open the live site and see what they're doing right now. How they work ↗");
+    expect(b).toContain('<a href="https://raise.commonworld.one/agents" target="_blank" rel="noopener">How they work ↗</a>');
     expect(b).toContain('<a href="https://dev.meta.ai" target="_blank" rel="noopener">https://dev.meta.ai</a>');
     expect(b).toContain('<a href="https://raise.commonworld.one" target="_blank" rel="noopener">open the live site</a>');
     const alts = [...b.matchAll(/<img src="\/avatars\/([^"]+)" alt="([^"]+)">/g)].map((m) => m[2]);

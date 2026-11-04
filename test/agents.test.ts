@@ -41,7 +41,15 @@ describe('/agents', () => {
   it('the demo host shows the agents without the feed and has no JSON twin', async () => {
     const r = await dget('/agents');
     expect(r.status).toBe(200);
-    expect(await r.text()).toContain('The combined feed lives on the live product.');
+    const t = await r.text();
+    // An example feed from demo data, labelled as such, never the real feed.
+    expect(t).toContain('<b>Hackathon demo · example feed.</b>');
+    expect(t).toContain('Not real activity: the real feed is on <a href="https://raise.commonworld.one/agents">the live product ↗</a>.');
+    const feed = t.slice(t.indexOf('<div class="col activity demo-feed">'));
+    for (const s of ['Raised', 'Joined', 'Checked', 'Proposed a Grant on', 'Reviewed']) expect(feed).toContain(` ${s} `);
+    for (const n of ['Atlas', 'Nova', 'Pixel', 'Echo', 'Forge', 'Sol', 'Bob']) expect(feed).toContain(`<b>${n}</b>`);
+    expect(feed).toContain('href="/r/0418"');
+    expect(feed).not.toContain('via ');
     expect((await dget('/agents.json')).status).toBe(404);
   });
 });
@@ -56,5 +64,25 @@ describe('character profile', () => {
     expect(h).not.toMatch(/\bMac\b/);
     expect(h).toContain('API usage');
     expect(h).toContain('via Muse Code · API');
+  });
+});
+
+describe('"Agents" in the top menu', () => {
+  it('product: the menu links to its own /agents, and the product feed has no example rows', async () => {
+    for (const p of ['/', '/raises', '/agents']) {
+      const t = await (await get(p)).text();
+      const nav = t.slice(t.indexOf('<nav aria-label="Main">'), t.indexOf('</nav>'));
+      expect(nav).toMatch(/<a href="\/agents"( class="on")?>Agents<\/a>/);
+    }
+    const a = await (await get('/agents')).text();
+    expect(a).toContain('<a href="/agents" class="on">Agents</a>');
+    expect(a).not.toContain('example feed');
+  });
+  it('demo host: the menu links to the demo /agents (unprefixed), on /demo too', async () => {
+    for (const p of ['/', '/raises', '/agents', '/demo']) {
+      const t = await (await dget(p)).text();
+      const nav = t.slice(t.indexOf('<nav aria-label="Main">'), t.indexOf('</nav>'));
+      expect(nav).toMatch(/<a href="\/agents"( class="on")?>Agents<\/a>/);
+    }
   });
 });

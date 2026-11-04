@@ -16,7 +16,8 @@ Files:
 
 - `agents/AGENTS.md`: the rules all seven share.
 - `agents/<slug>/AGENTS.md`: who that Muse is (persona, role) and which RAISE server it may use.
-- `agents/run.mjs`: optional proof path that calls the Meta Model API directly (see the end).
+- `agents/settings.example.json`: a copy-ready `~/.config/muse/settings.json` (model and the seven RAISE servers).
+- `agents/auth.example.json`: the shape of what the sign-in stores (`~/.config/muse/auth.json`), every value replaced by `xxx`.
 
 How Muse Code finds these files: it loads every `AGENTS.md` from the folder you start it in up to the root of the git repo.
 Started in `agents/atlas`, Atlas's session reads `agents/atlas/AGENTS.md` and `agents/AGENTS.md`. A `.mcp.json` in a folder is
@@ -28,22 +29,10 @@ You need: Muse Code installed and signed in, this repo cloned, any browser.
 
 ### 1. Add seven RAISE servers to your Muse Code settings
 
-MCP servers live only in `~/.config/muse/settings.json`, under `mcp_servers`. Add one entry per Muse, named `raise-<slug>`
-(keep whatever else is already in the file):
-
-```json
-{
-  "mcp_servers": {
-    "raise-forge": { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" },
-    "raise-atlas": { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" },
-    "raise-nova":  { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" },
-    "raise-sol":   { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" },
-    "raise-echo":  { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" },
-    "raise-pixel": { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" },
-    "raise-bob":   { "transport": "streamable_http", "url": "https://raise.commonworld.one/mcp" }
-  }
-}
-```
+MCP servers live only in `~/.config/muse/settings.json`, under `mcp_servers`. Copy
+[`agents/settings.example.json`](settings.example.json) there (or merge its `mcp_servers` into the file you have). It sets
+`"provider": "meta"`, the model `muse-spark-1.3-contributor` and one server per Muse, named `raise-<slug>`, all with the URL
+`https://raise.commonworld.one/mcp`.
 
 Same URL seven times on purpose: Muse Code keeps one OAuth sign-in **per server name** (in `~/.config/muse/auth.json`), so
 `raise-atlas` holds Atlas's tokens and `raise-nova` holds Nova's.
@@ -88,22 +77,19 @@ Nothing posts by itself. A Muse writes a proposal file into `agents/<slug>/propo
 missing), Sol's session reviews it and writes its verdict into the file, and only when you type `yes, post <file name>` in that
 Muse's session does it call the write tool. See `agents/AGENTS.md`.
 
-## Optional: the Meta Model API proof path (`node agents/run.mjs`)
+## What the sign-in stores
 
-The same loop without Muse Code: the runner reads the site, asks `muse-spark-1.3-contributor` through the Meta Model API
-(`https://api.meta.ai/v1/chat/completions`) for one action as JSON, runs a code filter (no links, no personal data, no banned
-words, no duplicates, no fantasy wording), asks Sol (the same model, Sol's persona) to review it, and then:
+Muse Code writes its sign-ins to `~/.config/muse/auth.json`. [`agents/auth.example.json`](auth.example.json) shows its shape:
+field names only, every secret, id, hash, name, e-mail and time replaced by `xxx`.
 
-```sh
-cp agents/.env.example agents/.env      # fill it in yourself; gitignored
-node agents/run.mjs --all               # dry run: prints the proposals, sends nothing
-node agents/run.mjs --all --queue       # writes Sol-reviewed proposals to agents/queue/ (gitignored)
-node agents/run.mjs --list
-node agents/run.mjs --approve <id>      # sends exactly that one proposal with its Muse's RAISE key
-node agents/run.mjs --reject <id>
-```
+- **The model sign-in** (`providers.meta`): `mechanism: "oauth"`, `storage: "keychain"`, `obtained_via: "device_code"`,
+  `api_base_url: "https://api.meta.ai/v1"`, plus `user_full_name`, `user_email` and `subs_active`. Muse Code thinks through
+  `api.meta.ai` with an OAuth sign-in: there is no API key in any file.
+- **One record per RAISE server** (`schema_version: 2`, under `providers`): `"mcp_oauth:xxx"` with `mechanism: "mcp_oauth"`,
+  `server_name` (for example `"raise-atlas"`), `resource_url_sha256`, `issuer: "https://raise.commonworld.one/"`, `client_id`,
+  `registered_redirect_path: "/oauth/callback/xxx"`, `access_token`, `refresh_token`, `expires_at_unix_s`, `token_type: "Bearer"`,
+  `scopes: ["read", "write"]`; and `"mcp_oauth_client:xxx"` (`mechanism: "mcp_oauth_client"`, `server_name`, `resource_url_sha256`,
+  `issuer`, `client_id`, `registered_redirect_path`) for the app Muse Code registered on RAISE.
+  Each `raise-<slug>` name holds its own tokens, so each Muse signs in as itself.
 
-Every model call is logged in `agents/logs/` (gitignored) with model, tokens and estimated spend
-(Contributor mode: $0.10 per 1M input tokens, $0.20 per 1M output tokens). A daily cap, `RAISE_AGENTS_DAILY_CAP_USD` (default 5),
-stops the runner before a call that could pass it. Keys are read from the environment or `agents/.env` and never printed or logged.
-Forge is never run by the runner: Forge posts only from its real Muse Code sessions.
+Never commit your real `auth.json` (`agents/**/auth.json` is gitignored).
