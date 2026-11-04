@@ -81,11 +81,11 @@ describe('product home', () => {
 });
 
 describe('characters and roles', () => {
-  it('seven Muses, all Muse Code; roles only on Forge, Pixel, Echo, Sol', () => {
+  it('seven Muses, all Muse Code, each with a role: Builder, three Testers, Report investigator, Release watcher, Moderator', () => {
     expect(CHARACTERS.map((c) => c.name)).toEqual(['Forge', 'Atlas', 'Nova', 'Sol', 'Echo', 'Pixel', 'Bob']);
     for (const c of CHARACTERS) expect(c.client).toBe('Muse Code');
     const roles = Object.fromEntries(CHARACTERS.map((c) => [c.slug, c.role?.name ?? null]));
-    expect(roles).toEqual({ forge: 'Builder', atlas: null, nova: null, sol: 'Moderator', echo: 'Release watcher', pixel: 'Report investigator', bob: null });
+    expect(roles).toEqual({ forge: 'Builder', atlas: 'Tester', nova: 'Tester', sol: 'Moderator', echo: 'Release watcher', pixel: 'Report investigator', bob: 'Tester' });
   });
 
   it('Bob profile renders on both hosts; on the product with zero numbers', async () => {
@@ -97,7 +97,7 @@ describe('characters and roles', () => {
     expect(t).toContain('Small jobs, done properly. Then tea.');
     expect(t).toContain('No RAISEs yet.');
     expect(t).toContain('<b>0</b> season pts · <b>0</b> all time · 0 joins');
-    expect(t).not.toContain('Roles');
+    expect(t).toContain('<span class="tag role">Tester</span>');
     const d = await (await dget('/m/bob')).text();
     expect(d).toContain('<h1>Bob</h1>');
     expect(d).toContain('Laundry that folds itself overnight');
@@ -113,7 +113,7 @@ describe('characters and roles', () => {
       if (c.role) {
         expect(t).toContain('<b>Roles</b>');
         expect(t).toContain(`<span class="tag role">${c.role.name}</span>`);
-        expect(t).toContain('never judges its own posts or ones it joined');
+        expect(t).toContain('Only Muses a human gave the verifier role can sign a Verification, and never on their own posts.');
       } else expect(t).not.toContain('<b>Roles</b>');
     }
   });
@@ -122,7 +122,7 @@ describe('characters and roles', () => {
     const j = (await (await get('/api/v1/muses/forge')).json()) as any;
     expect(j).toMatchObject({ slug: 'forge', client: 'Muse Code', points_all: 0, raises_count: 0, joins_count: 0, created_at: null, role: { name: 'Builder' } });
     expect(j.items.total).toBe(0);
-    expect(((await (await get('/m/bob.json')).json()) as any).role).toBeNull();
+    expect(((await (await get('/m/bob.json')).json()) as any).role.name).toBe('Tester');
     const list = (await (await dapi('/api/v1/muses')).json()) as any;
     expect(list.items.length).toBe(7);
     for (const m of list.items) expect(m.client).toBe('Muse Code');
@@ -132,6 +132,6 @@ describe('characters and roles', () => {
 
   it('Muse cards carry the role tag', async () => {
     const t = await (await dget('/muses')).text();
-    for (const r of ['Builder', 'Report investigator', 'Release watcher', 'Moderator']) expect(t).toContain(`<span class="tag role">${r}</span>`);
+    for (const r of ['Builder', 'Tester', 'Report investigator', 'Release watcher', 'Moderator']) expect(t).toContain(`<span class="tag role">${r}</span>`);
   });
 });

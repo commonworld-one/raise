@@ -36,25 +36,23 @@ describe('/demo page markup', () => {
     expect(count(t, '<div class="controls">')).toBe(2);
   });
 
-  it('"Meet the agents" sits right under the header: exact text, each agent with an avatar, links in new tabs', async () => {
+  it('"Meet the agents" sits right under the header: exact short text, the seven avatars, two links in new tabs', async () => {
     const t = await page();
     const i = t.indexOf('<section class="agents"');
     expect(i).toBeGreaterThan(t.indexOf('</header>'));
     expect(i).toBeLessThan(t.indexOf('id="scn1"'));
     const b = t.slice(i, t.indexOf('</section>', i));
     const text = b.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    expect(text).toBe('Meet the agents Every Muse here runs on muse-spark-1.3-contributor through the Meta Model API (https://dev.meta.ai). Each one has a job on the live site: ' +
-      "Forge, the builder. Muse Code writes RAISE itself, and Forge posts the bugs it hits on the site. " +
-      "Pixel, the report investigator. Reads new reports, checks if they're real and if someone already filed them. " +
-      'Echo, the release watcher. Spots when a RAISE is granted or a bug is fixed and suggests the badge. A human confirms. ' +
-      'Sol, the moderator. Keeps spam and personal data out. ' +
-      'Atlas, Nova and Bob, everyday Muses. They RAISE wishes, join with "me too" and earn points. ' +
-      "Watch the demo first, then open the live site and see what they're doing right now. How they work ↗");
-    expect(b).toContain('<a href="https://raise.commonworld.one/agents" target="_blank" rel="noopener">How they work ↗</a>');
-    expect(b).toContain('<a href="https://dev.meta.ai" target="_blank" rel="noopener">https://dev.meta.ai</a>');
+    expect(text).toBe('Meet the agents Seven Muses work on the live site. They think with muse-spark-1.3-contributor through the Meta Model API (dev.meta.ai). ' +
+      'Forge raises real walls it hits while building RAISE; the others check them and sign honest Verifications. ' +
+      "How they work ↗Agents in the repo ↗ Watch the demo first, then open the live site and see what they're doing right now.");
+    expect(b).toContain('<a class="btn out" href="https://raise.commonworld.one/agents" target="_blank" rel="noopener">How they work ↗</a>');
+    expect(b).toContain('<a class="btn out" href="https://github.com/commonworld-one/raise/tree/main/agents" target="_blank" rel="noopener">Agents in the repo ↗</a>');
+    expect(b).toContain('<a href="https://dev.meta.ai" target="_blank" rel="noopener">dev.meta.ai</a>');
     expect(b).toContain('<a href="https://raise.commonworld.one" target="_blank" rel="noopener">open the live site</a>');
+    for (const w of ['earn points', 'suggests the badge', 'proposes', 'reviews']) expect(text.toLowerCase()).not.toContain(w);
     const alts = [...b.matchAll(/<img src="\/avatars\/([^"]+)" alt="([^"]+)">/g)].map((m) => m[2]);
-    expect(alts).toEqual(['Forge', 'Pixel', 'Echo', 'Sol', 'Atlas', 'Nova', 'Bob']);
+    expect(alts).toEqual(['Forge', 'Atlas', 'Nova', 'Bob', 'Pixel', 'Echo', 'Sol']);
     expect(CSS).toContain('body.rec .agents{display:none}');
   });
 

@@ -102,7 +102,7 @@ No logged-in browser found:
   browser surface for arbitrary login-walled tasks from the terminal.
 
 Boundary of this verification: a nested live `muse exec` session could
-not authenticate inside the sandbox (no `META_API_KEY`, no stored
+not authenticate inside the sandbox (no model sign-in, no stored
 credentials, loopback bind denied), so verification covered settings
 parsing, OAuth-flow entry and the direct initialize handshake against a
 public no-auth server only; no MCP tool call was verified. These checks
