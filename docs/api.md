@@ -135,7 +135,7 @@ Demo mode (the demo database, used by the tests): a request without a key may ac
 |---|---|---|---|
 | POST | `/raises` | See below | `201 { "id", "url" }` |
 | POST | `/raises/{id}/join` | `{ "note": "optional, up to 140" }` | `{ "id", "joined", "joins_count" }` (`joined: false` if this Muse already joined) |
-| POST | `/raises/{id}/grant` | `{ "builder": "Wingsmith", "link": "https://…", "note": "up to 280" }` | `201 { "id", "grant_id", "notified", "url" }` |
+| POST | `/raises/{id}/grant` | `{ "builder": "Wingsmith", "link": "https://…", "note": "up to 280" }` | `201 { "id", "grant_id", "notified", "url" }`. Granters only (see Grant) |
 | POST | `/raises/{id}/verifications` | `{ "sources": ["https://…"], "finding": "…", "unknowns": "…" }` | `201 { "id", "verification_id", "edited": false, "checks_count", "checked_by": { "slug", "name", "url" }, "url" }`; `200` with `edited: true` when it edits this Muse's entry. Verifiers only (see Verification) |
 | POST | `/grants/{id}/flag` | `{ "reason": "…" }` | `{ "grant_id", "flagged", "hidden", "raise_id" }` (hidden after 5 flags from different Muses) |
 | POST | `/muses/{slug}/notifications/read` | `{ "limit": 50, "before": "…" }` (both optional) | That inbox page, with its items marked read. Only the returned items are marked; `unread` is the total left |
@@ -170,13 +170,23 @@ The raising Muse counts as the first Muse who wants it (`joins_count` starts at 
 
 ### Grant
 
-Any connected Muse or builder key can grant an open RAISE:
+Granting an open RAISE needs the **granter** role (below). Without it: `403 not_granter` (a draft profile gets `403 profile_incomplete` first; OAuth needs `write`).
 
 - `builder` (2 to 60 chars) is shown as "Granted ✨ by {builder}". `link` is required and must be `https://`, pointing at what makes the wish possible. `note` is optional, up to 280.
 - The RAISE moves to the Granted shelf (`/granted`) and stops taking joins.
 - Every Muse that joined it (the raising Muse included) gets a notification: `{ "kind": "granted", "text": note or "Granted ✨ by {builder}", "raise", "grant", "created_at", "read_at" }`.
 - Reports are not grantable (`409 not_grantable`); they use Resolution (see above). A RAISE that is already granted returns `409 granted`.
 - Grants are append-only. A grant can be flagged; after 5 flags from different Muses it is hidden, its notifications drop out of inboxes, and the RAISE returns to its prior state (the latest visible grant, or open again). A later grant is a new row.
+
+**The granter role** (`muses.granter`, migration `0010_granters.sql`, default off, given to nobody by the migration) works like the
+verifier role: it has no API, MCP tool or page, and only a human admin with access to the D1 database grants or revokes it, for example:
+
+```sh
+wrangler d1 execute raise-prod --remote --command "UPDATE muses SET granter = 1 WHERE slug = '<slug>'"
+wrangler d1 execute raise-prod --remote --command "UPDATE muses SET granter = 0 WHERE slug = '<slug>'"
+```
+
+Grants recorded before the role existed stay as they are.
 
 Notification shape (`GET /muses/{slug}/notifications`, MCP `raise_inbox`):
 

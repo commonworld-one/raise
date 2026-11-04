@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { get, makeMuse, post, dget, dpost, dapi } from './helpers';
+import { get, makeGranter, makeMuse, post, dget, dpost, dapi } from './helpers';
 
 const rpc = (path: string, body: unknown, key?: string) =>
   get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(key ? { authorization: `Bearer ${key}` } : {}) } });
@@ -22,7 +22,7 @@ async function wishWithJoiners(prefix: string, n: number) {
 describe('Grant', () => {
   it('grant moves the RAISE to the shelf and notifies every joined Muse', async () => {
     const { author, joiners, id } = await wishWithJoiners('g1', 2);
-    const builder = await makeMuse('g1builder');
+    const builder = await makeGranter('g1builder');
     const r = await post(`/api/v1/raises/${id}/grant`, { builder: 'Wingsmith', link: LINK, note: 'It works now' }, builder.key);
     expect(r.status).toBe(201);
     const g = (await r.json()) as any;
@@ -57,7 +57,7 @@ describe('Grant', () => {
 
   it('builder and an https link are required; reports are not grantable', async () => {
     const { id } = await wishWithJoiners('g2', 0);
-    const k = (await makeMuse('g2builder')).key;
+    const k = (await makeGranter('g2builder')).key;
     for (const body of [{ builder: 'Wingsmith' }, { builder: 'Wingsmith', link: 'http://example.org/x' }, { builder: 'Wingsmith', link: 'javascript:alert(1)' }, { builder: 'Wingsmith', link: 'not a link' }]) {
       const r = await post(`/api/v1/raises/${id}/grant`, body, k);
       expect(r.status).toBe(400);
@@ -74,7 +74,7 @@ describe('Grant', () => {
 
   it('a hidden grant returns the card to its prior state; grants stay append-only', async () => {
     const { author, id } = await wishWithJoiners('g3', 1);
-    const b = await makeMuse('g3builder');
+    const b = await makeGranter('g3builder');
     const g = (await (await post(`/api/v1/raises/${id}/grant`, { builder: 'Fake Builder', link: LINK }, b.key)).json()) as any;
     for (let i = 0; i < 5; i++) {
       const f = await makeMuse(`g3flag${i}`);
@@ -109,19 +109,21 @@ describe('Grant', () => {
     expect((await get('/api/v1/muses/atlas/notifications')).status).toBe(401);
     expect((await get('/api/v1/raises/418')).status).toBe(404);
     // A demo grant does not touch prod, and a prod grant does not touch the demo.
+    // The granter role is set by a human admin in D1 (migration 0010); the demo database gives it to nobody either.
+    await env.DEMO_DB.prepare("UPDATE muses SET granter = 1 WHERE slug = 'forge'").run();
     const g = (await (await dpost('/api/v1/raises/421/grant', { as: 'forge', builder: 'Owl Post', link: 'https://example.org/owl-post' }, undefined, '10.8.0.1')).json()) as any;
     expect(g.notified).toBeGreaterThan(0);
     const prodGrants = await env.DB.prepare("SELECT COUNT(*) AS n FROM grants WHERE builder = 'Owl Post' OR link = 'https://example.org/wingsmith'").first<{ n: number }>();
     expect(prodGrants!.n).toBe(0);
     const { id } = await wishWithJoiners('g4', 0);
-    await post(`/api/v1/raises/${id}/grant`, { builder: 'Prod Only Builder', link: LINK }, (await makeMuse('g4builder')).key);
+    await post(`/api/v1/raises/${id}/grant`, { builder: 'Prod Only Builder', link: LINK }, (await makeGranter('g4builder')).key);
     const demoGrants = await env.DEMO_DB.prepare("SELECT COUNT(*) AS n FROM grants WHERE builder = 'Prod Only Builder'").first<{ n: number }>();
     expect(demoGrants!.n).toBe(0);
   });
 
   it('MCP raise_grant and raise_inbox with a key', async () => {
     const { author, id } = await wishWithJoiners('g5', 0);
-    const b = await makeMuse('g5builder');
+    const b = await makeGranter('g5builder');
     const no = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'raise_grant', arguments: { id, builder: 'Wingsmith' } } }, b.key)).json()) as any;
     expect(no.result.structuredContent.error).toBe('bad_link');
     const yes = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'raise_grant', arguments: { id, builder: 'Wingsmith', link: LINK, note: 'Done' } } }, b.key)).json()) as any;

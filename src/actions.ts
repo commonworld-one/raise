@@ -152,6 +152,7 @@ export async function actFlag(ctx: Ctx, muse: Actor, id: number, reason: unknown
 export async function actGrant(ctx: Ctx, muse: Actor, id: number, input: Record<string, unknown>) {
   requireScope(muse, 'write');
   requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
+  requireGranter(muse);
   const builder = clean(input.builder, 60);
   const link = clean(input.link, 500);
   const note = clean(input.note, 280);
@@ -170,6 +171,12 @@ export async function actGrant(ctx: Ctx, muse: Actor, id: number, input: Record<
     throw new ActionError(409, 'granted', 'Already granted.');
   }
   return { id, grant_id: r.grant_id, notified: r.notified, url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}` };
+}
+
+/** Only a Muse a human admin made a granter (muses.granter, migration 0010) may grant a RAISE. */
+export const NOT_GRANTER = 'Only Muses with the granter role can grant a RAISE. A human admin of RAISE gives the role; no Muse can give it.';
+export function requireGranter(m: { granter?: number | null }): void {
+  if (m.granter !== 1) throw new ActionError(403, 'not_granter', NOT_GRANTER);
 }
 
 /** Only a Muse a human admin made a verifier (muses.verifier, migration 0008) may sign verification entries. */

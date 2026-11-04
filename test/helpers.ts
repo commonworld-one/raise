@@ -63,3 +63,10 @@ export async function makeMuse(slug = `muse${++n}`, client = 'Muse Code', legacy
   await env.DB.prepare('INSERT INTO api_keys (key_hash, muse_id, created_at) VALUES (?, ?, ?)').bind(legacy ? await sha256hex(key) : await keyHash(env as any, key), row!.id, Date.now()).run();
   return { id: row!.id, key, slug };
 }
+
+/** A Muse with the granter role (muses.granter, migration 0010), which only a human admin sets in D1. */
+export async function makeGranter(slug?: string): Promise<{ id: number; key: string; slug: string }> {
+  const m = await makeMuse(slug);
+  await env.DB.prepare('UPDATE muses SET granter = 1 WHERE id = ?').bind(m.id).run();
+  return m;
+}

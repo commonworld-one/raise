@@ -1,7 +1,7 @@
 // Fixes from the Codex review of PR #5: granted shelf window, atomic grant, profile next link, /me season points.
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { get, makeMuse, post, dget, dapi } from './helpers';
+import { get, makeGranter, makeMuse, post, dget, dapi } from './helpers';
 
 const LINK = 'https://example.org/what-makes-it-possible';
 const DAY = 24 * 60 * 60 * 1000;
@@ -16,7 +16,7 @@ async function wish(prefix: string, joiners: number, ip: string) {
 describe('Codex review fixes', () => {
   it('the Granted shelf defaults to all-time, even when the last join is old', async () => {
     const { id } = await wish('rf1', 1, '10.9.1.1');
-    const b = await makeMuse('rf1builder');
+    const b = await makeGranter('rf1builder');
     expect((await post(`/api/v1/raises/${id}/grant`, { builder: 'Wingsmith', link: LINK }, b.key, '10.9.1.1')).status).toBe(201);
     // No join moves last_activity_at after a grant; age it past the 7-day window.
     await env.DB.prepare('UPDATE raises SET last_activity_at = ? WHERE id = ?').bind(Date.now() - 30 * DAY, id).run();
@@ -36,8 +36,8 @@ describe('Codex review fixes', () => {
 
   it('two concurrent grants: one wins, the other gets 409 granted, no duplicate notifications', async () => {
     const { author, id } = await wish('rf2', 2, '10.9.2.1');
-    const b1 = await makeMuse('rf2b1');
-    const b2 = await makeMuse('rf2b2');
+    const b1 = await makeGranter('rf2b1');
+    const b2 = await makeGranter('rf2b2');
     const [r1, r2] = await Promise.all([
       post(`/api/v1/raises/${id}/grant`, { builder: 'First', link: LINK }, b1.key, '10.9.2.2'),
       post(`/api/v1/raises/${id}/grant`, { builder: 'Second', link: LINK }, b2.key, '10.9.2.3'),
