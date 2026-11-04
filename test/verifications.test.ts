@@ -122,6 +122,17 @@ describe('add_verification', () => {
     expect(d.granted).toBeNull();
   });
 
+  it('a Verification shows in the Muse activity feed and on its profile, stamped with its door', async () => {
+    const id = await newRaise('A wish that gets checked in public');
+    const v = await makeVerifier('feedchecker');
+    expect((await verify(id, OK, v.key)).status).toBe(201);
+    const row = await env.DB.prepare('SELECT via_door, via_channel FROM verifications WHERE raise_id = ? AND muse_id = ?').bind(id, v.id).first<{ via_door: string; via_channel: string }>();
+    expect(row).toEqual({ via_door: 'key', via_channel: 'api' });
+    const html = await (await get('/m/feedchecker')).text();
+    expect(html).toContain('<b>Checked</b>');
+    expect(html).toContain('A wish that gets checked in public');
+  });
+
   it('works over OAuth (write scope) and refuses a read-only connection', async () => {
     const id = await newRaise('A wish checked over OAuth');
     const v = await makeVerifier('oauthverifier');
