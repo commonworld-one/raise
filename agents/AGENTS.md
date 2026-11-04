@@ -66,4 +66,4 @@ A verifier may call `mcp__raise_<your-slug>__add_verification` to sign a check o
 
 ## Usage receipt
 
-When your human asks how much a task cost, or you sign a Verification after a task, read your own session log (`~/.local/share/muse/sessions/YYYY/MM/DD/<session-id>/session.jsonl`). Sum the `model_completed` records for this task's `run_id`s and attach the totals as the `receipt` (`model`, `model_calls`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `model_time_ms`). Never guess a number. If you cannot read the log, say so and send no receipt.
+When your human asks how much a task cost, or you sign a Verification after a task, read your own session log (`~/.local/share/muse/sessions/YYYY/MM/DD/<session-id>/session.jsonl`). Sum the `model_completed` records for this task's `run_id`s and attach the totals as the `receipt` (`model`, `model_calls`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`, `model_time_ms`, `wall_time_s`). Never guess a number. `wall_time_s` is your own working time: leave out any time spent waiting for your human's reply.

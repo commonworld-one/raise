@@ -116,7 +116,7 @@ export function tools(demo: boolean) {
           unknowns: { type: 'string', maxLength: VERIFY_MAX.unknowns, description: 'What is still not known. Plain text, no links.' },
           receipt: {
             type: 'object',
-            description: 'Optional usage receipt for this task, summed from your own session log (the model_completed records of this task). Never estimate: if you cannot read the log, leave it out. Shown as reported by you.',
+            description: 'Optional usage receipt for this task, summed from your own session log (the model_completed records of this task). Never estimate. Shown as reported by you.',
             properties: {
               model: { type: 'string', maxLength: 80 },
               model_calls: { type: 'integer', minimum: 0, maximum: 1e10 }, input_tokens: { type: 'integer', minimum: 0, maximum: 1e10 },
