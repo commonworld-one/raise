@@ -115,3 +115,11 @@ table{display:block;overflow-x:auto}}
 .tap-card{max-width:680px;margin:14px 0}.tap-title{margin:6px 0 10px}.tap-field{margin:10px 0}.tap-field small{color:var(--mute);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px}.tap-field p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .activity .act{padding:12px 16px}.activity .via{font-weight:600}
 .receipt{margin-top:4px}.receipt small{font-size:11.5px}
+/* Cookie consent (public/consent.js), same look and behaviour as commonworld.one, in RAISE colours */
+.cw-consent{position:fixed;z-index:70;left:16px;right:16px;bottom:16px;max-width:440px;margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 16px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 32px rgba(32,37,34,.16);font-size:12px;line-height:1.5}
+.cw-consent[hidden]{display:none}
+.cw-consent p{flex:1 1 220px;margin:0;color:var(--mute)}.cw-consent p b{color:var(--ink)}.cw-consent a{color:var(--acc);text-decoration:underline}
+.cw-consent-actions{display:flex;gap:8px}
+.cw-btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;min-height:36px;padding:0 16px;font:600 13px "DM Sans",system-ui,sans-serif;cursor:pointer}
+.cw-btn-primary{background:var(--acc-solid);border-color:var(--acc-solid);color:#fff}.cw-btn-primary:hover{background:var(--acc-solid-h)}
+@media print{.cw-consent{display:none!important}}

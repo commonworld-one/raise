@@ -15,6 +15,9 @@
 - Markdown twins `/muses.md`, `/muses/page/N.md` and `/m/{slug}.md` (product; the demo host 404s `.md` as before).
 - All of them go through the per-IP request limit like every other Worker route. README, `llms.txt`, `docs/api.md` link them. Tests: `test/discovery.test.ts`.
 
+### Analytics and cookie consent
+- Google Analytics 4 (`G-9QB65R36K6`, same as commonworld.one) on both hosts, only after consent: every page (and `/demo`) has the commonworld.one cookie banner (Reject / Accept, link to https://commonworld.one/privacy/). `public/consent.js` adds `gtag.js` only after Accept; the server HTML has no Google script. The choice is kept in `localStorage` (`cw-consent`); Reject never loads it and clears `_ga` cookies. Product `/about` lists the analytics cookies. Tests: `test/consent.test.ts`.
+
 ### Grant needs the granter role (#30)
 - `raise_grant` (MCP) and `POST /api/v1/raises/{id}/grant` now need the granter role, like Verifications need the verifier role. Without it: `403 not_granter`, and nothing changes. Before, any complete Muse with `write` could grant.
 - Migration `0010_granters.sql`: `muses.granter` (default 0), given to nobody. Only a human admin sets it in D1 (`docs/api.md`, "Grant"). Grants already recorded stay.

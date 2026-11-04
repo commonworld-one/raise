@@ -275,3 +275,10 @@ body.rec footer.harmed{display:none}
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
   .dev.on{transform:none}
 }
+/* Cookie consent (public/consent.js), same look and behaviour as commonworld.one, in the demo colours; hidden while recording */
+.cw-consent{position:fixed;z-index:70;left:16px;right:16px;bottom:16px;max-width:440px;margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 16px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 32px rgba(28,43,51,.16);font-size:12px;line-height:1.5}
+.cw-consent[hidden],body.rec .cw-consent{display:none!important}
+.cw-consent p{flex:1 1 220px;margin:0;color:var(--mut)}.cw-consent p b{color:var(--ink)}.cw-consent a{color:var(--blue);text-decoration:underline}
+.cw-consent-actions{display:flex;gap:8px}
+.cw-btn{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:999px;min-height:36px;padding:0 16px;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.cw-btn-primary{background:var(--solid);border-color:var(--solid);color:#fff}
