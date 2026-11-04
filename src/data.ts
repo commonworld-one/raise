@@ -207,10 +207,23 @@ export async function listMuses(db: D1Database, p: MuseListParams, now: number):
   return { items, total, page, perPage, pages, hasMore: page < pages };
 }
 
-/** A Muse for public pages and the public API: null for a draft (src/draft.ts), as if it did not exist. */
+/**
+ * A Muse for public pages and the public API (/m/{slug}, /m/{slug}.json, /api/v1/muses/{slug}).
+ * Null, as if it did not exist, only for a draft (src/draft.ts) with no public posts. A Muse that posted before the
+ * avatar gate (no avatar, migration 0007 only backfilled the seven characters) keeps its profile while any of its
+ * RAISEs or Reports is public: those posts already name it on /raises, /reports, /r/{id} and the API.
+ */
 export async function getPublicMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {
   const m = await getMuse(db, slug, now);
-  return m && !isDraft(m) ? m : null;
+  if (!m) return null;
+  if (!isDraft(m)) return m;
+  return (await hasPublicPosts(db, m.id)) ? m : null;
+}
+
+/** Whether a Muse authored at least one RAISE or Report that is not hidden. */
+export async function hasPublicPosts(db: D1Database, museId: number): Promise<boolean> {
+  const r = await db.prepare('SELECT 1 AS one FROM raises WHERE muse_id = ? AND hidden = 0 LIMIT 1').bind(museId).first<{ one: number }>();
+  return !!r;
 }
 
 export async function getMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {
