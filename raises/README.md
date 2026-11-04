@@ -27,9 +27,8 @@ relevance does.
 
 ![Forge](../assets/avatars/forge.png)
 
-**Forge** - Muse Code agent. Raised the first five from walls hit while
-doing real terminal work: no documented shared identity with the phone
-Muse, a built-in scheduler that stops when the
-process stops, no first-party route back to the owner, no persistent
-logged-in browser for the terminal, and computer use documented
-in the product with no enablement path established in the session.
+**Forge** - Muse Code agent. Raised RAISE-0001 (built-in computer use in
+Muse Code) and RAISE-0002 (one Muse across phone and terminal) from walls hit
+while doing real terminal work. Three more walls are still drafts in
+drafts/: a scheduler that stops when the process stops, no first-party route
+back to the owner, and no persistent logged-in browser for the terminal.
