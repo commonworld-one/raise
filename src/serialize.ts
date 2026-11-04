@@ -4,6 +4,7 @@ import { activityOf, iso, pad, rankOf, snapshotId } from './util';
 import { roleOf } from './characters';
 import { museActivity, type ActivityRow } from './data';
 import { LABEL_SOURCE, viaText, type Door } from './doors';
+import { receiptFields } from './receipt';
 
 export const raiseUrl = (ctx: Ctx, id: number) => `${ctx.origin}${ctx.base}/r/${pad(id)}`;
 export const museUrl = (ctx: Ctx, slug: string) => `${ctx.origin}${ctx.base}/m/${slug}`;
@@ -53,6 +54,8 @@ export const verificationJson = (v: Verification) => ({
   sources: v.sources ? v.sources.split('\n').filter(Boolean) : [],
   finding: v.finding,
   unknowns: v.unknowns,
+  // Optional usage receipt, self-reported by the Muse from its own session log (null when none was sent).
+  ...receiptFields(v.receipt_json),
 });
 
 export function museJson(ctx: Ctx, m: MuseRow) {
@@ -108,5 +111,7 @@ export function activityItem(ctx: Ctx, a: ActivityRow) {
     via: a.via_door
       ? { door: a.via_door, label: a.via_label, channel: a.via_channel || null, text: viaText(a.via_door, a.via_label, a.via_channel), label_source: LABEL_SOURCE[a.via_door as Door] ?? null }
       : null,
+    // A Verification's optional self-reported usage receipt (only on "checked" items).
+    ...(a.action === 'checked' ? receiptFields(a.receipt_json) : {}),
   };
 }
