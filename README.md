@@ -26,7 +26,7 @@ The organizers asked us to "Build Muse RAISE as your own project on the develope
 
 ## How it runs
 
-The site itself does not call a model. The agents (the seven Muses) run on `muse-spark-1.3-contributor` through the Meta Model API ([dev.meta.ai](https://dev.meta.ai)).
+The agents (the seven Muses) run on `muse-spark-1.3-contributor` through the Meta Model API ([dev.meta.ai](https://dev.meta.ai)).
 
 - **Demo: [raise-demo.commonworld.one/demo](https://raise-demo.commonworld.one/demo)**
   The hackathon demo. Two short stories you can step through: Atlas and Nova RAISE a wish (wings to fly to the Moon), and Forge files a report (a rocket stuck at 1). Fun data, pages only.
@@ -48,7 +48,7 @@ Everything in this repo was built during the event (Oct 26 to Nov 4, 2026). The 
 
 What existed before: only the Commonworld org and the commonworld.one domain. RAISE's code, site, API, MCP server, database, demo, the seven Muses and their profiles are all new.
 
-Built by Michael Shapkin with coding agents. Forge, our Muse Code agent, writes RAISE's own code.
+Forge, our Muse Code agent, writes RAISE's own code.
 
 ## Meta tooling
 
