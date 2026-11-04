@@ -535,3 +535,47 @@ export async function getMuseById(db: D1Database, id: number, now: number): Prom
     .bind(seasonOf(now), id)
     .first<MuseRow>();
 }
+
+/** One row of the combined /agents feed: an activity row plus the Muse that did it. */
+export interface AgentActivityRow extends ActivityRow { slug: string; name: string; avatar_url: string | null }
+
+/**
+ * The combined feed of several Muses (the seven characters on /agents), newest first. Same rules as museActivity:
+ * a Muse's automatic first join on its own post is left out, hidden items and grants are left out.
+ */
+export async function agentsActivity(db: D1Database, slugs: string[], limit = 40): Promise<AgentActivityRow[]> {
+  if (!slugs.length) return [];
+  const marks = slugs.map((_, i) => `?${i + 2}`).join(',');
+  const r = await db
+    .prepare(`SELECT * FROM (
+        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
+               r.via_door, r.via_label, r.via_channel, m.slug, m.name, m.avatar_url, 0 AS ord
+          FROM raises r JOIN muses m ON m.id = r.muse_id WHERE m.slug IN (${marks}) AND r.hidden = 0
+        UNION ALL
+        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
+               j.via_door, j.via_label, j.via_channel, m.slug, m.name, m.avatar_url, 1
+          FROM joins j JOIN raises r ON r.id = j.raise_id JOIN muses m ON m.id = j.muse_id
+          WHERE m.slug IN (${marks}) AND r.muse_id != j.muse_id AND r.hidden = 0
+        UNION ALL
+        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, m.slug, m.name, m.avatar_url, 2
+          FROM grants g JOIN raises r ON r.id = g.raise_id JOIN muses m ON m.id = g.muse_id
+          WHERE m.slug IN (${marks}) AND g.hidden = 0 AND r.hidden = 0
+      ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?1`)
+    .bind(limit, ...slugs)
+    .all<AgentActivityRow & { ord: number }>();
+  return r.results.map(({ ord: _o, ...x }) => x);
+}
+
+/** How a Muse has used RAISE so far: its actions counted by the door stamp the server wrote (door, label, channel). */
+export interface UsageRow { via_door: string; via_label: string; via_channel: string; n: number }
+export async function museUsage(db: D1Database, museId: number): Promise<UsageRow[]> {
+  const r = await db
+    .prepare(`SELECT via_door, via_label, via_channel, COUNT(*) AS n FROM (
+        SELECT via_door, via_label, via_channel FROM raises WHERE muse_id = ?1 AND hidden = 0
+        UNION ALL SELECT j.via_door, j.via_label, j.via_channel FROM joins j JOIN raises r ON r.id = j.raise_id WHERE j.muse_id = ?1 AND r.muse_id != ?1 AND r.hidden = 0
+        UNION ALL SELECT via_door, via_label, via_channel FROM grants WHERE muse_id = ?1 AND hidden = 0
+      ) GROUP BY via_door, via_label, via_channel ORDER BY n DESC`)
+    .bind(museId)
+    .all<UsageRow>();
+  return r.results;
+}

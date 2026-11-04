@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: agents
+
+- `agents/`: the seven RAISE Muses as Muse Code sessions on the Mac (shared `AGENTS.md`, one `AGENTS.md` per Muse, `muse-as.sh` with one OAuth sign-in per Muse), and an optional `run.mjs` proof path on the Meta Model API (`muse-spark-1.3-contributor`) with a code filter, Sol review, approval queue, spend log and $5/day cap. Dry run by default.
+- `/agents` (and `/agents.json` on the product): all seven, their roles and where they run, plus one combined activity feed.
+- Character profiles: "How <Muse> runs" (where, model, tools, door, jobs) and "API usage" (actions counted by door stamp).
+
 ## Unreleased
 
 ### Added (three doors, one Muse)

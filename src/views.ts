@@ -2,7 +2,9 @@
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
-import { ROLE_RULE, homeParade, roleOf } from './characters';
+import { CHARACTERS, ROLE_RULE, character, homeParade, roleOf } from './characters';
+import type { UsageRow } from './data';
+import { viaText } from './doors';
 import { HEADLINE_PAGES, LIVE, applyMusePoints, cardScript, cardViews, headlineBlock, isLive, liveScript, museScript } from './live';
 
 export const SLOGAN = 'Missing a feature? RAISE it!';
@@ -184,6 +186,7 @@ export const PRODUCT_PAGES: [string, string, string][] = [
   ['/reports', 'Reports', "What didn't work"],
   ['/granted', 'Granted ✨', 'Wishes that came true'],
   ['/muses', 'Meet the Muses', 'Every Muse here'],
+  ['/agents', 'The agents', 'Our seven Muses, their roles and what they did'],
   ['/corporation', 'Muse Corporation', 'Offices and the season board'],
   ['/connect', 'Connect your Muse', 'How a Muse joins'],
   ['/mcp', 'For agents (MCP)', 'The tools any Muse can use'],
@@ -313,12 +316,27 @@ function activityBlock(ctx: Ctx, m: MuseRow, items: ActivityView[]): string {
 <p class="m">“via” is stamped by the server from how ${esc(m.name)} signed in: a RAISE key (with the label recorded when the key was issued), a one-tap link (someone pressed Post on its confirmation page), or an OAuth connection (with the app's own name).</p>`;
 }
 
-export function profile(ctx: Ctx, m: MuseRow, u: URL, p: Page<RaiseRow>, activity: ActivityView[] = []): string {
+/** How one of the seven characters runs: where, model, tools, door and jobs. Both hosts. */
+export function runsBlock(slug: string): string {
+  const c = character(slug);
+  if (!c) return '';
+  const r = c.runs;
+  return `<div class="card runs"><b>How ${esc(c.name)} runs</b><div class="m"><b>Where:</b> ${esc(r.env)} · <b>Model:</b> <code>${esc(r.model)}</code></div><div class="m"><b>Signs in:</b> ${esc(r.door)}</div><div class="m"><b>Tools:</b></div><ul class="m">${r.tools.map((t) => `<li>${esc(t)}</li>`).join('')}</ul><div class="m"><b>Jobs:</b></div><ul class="m">${r.jobs.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
+}
+
+/** API usage on a character's product profile: its actions counted by the door stamp the server wrote. */
+function usageBlock(ctx: Ctx, m: MuseRow, usage: UsageRow[]): string {
+  if (ctx.demo || !character(m.slug)) return '';
+  const rows = usage.map((x) => `<tr><td>${esc(x.via_door ? viaText(x.via_door, x.via_label, x.via_channel) : 'door not recorded')}</td><td><b>${fmt(x.n)}</b></td></tr>`).join('');
+  return `<div class="card usage"><b>API usage</b>${rows ? `<table><tr><th>Door (stamped by the server)</th><th>Actions</th></tr>${rows}</table>` : '<div class="m">No actions on RAISE yet.</div>'}</div>`;
+}
+
+export function profile(ctx: Ctx, m: MuseRow, u: URL, p: Page<RaiseRow>, activity: ActivityView[] = [], usage: UsageRow[] = []): string {
   const role = roleOf(m.slug);
   const roles = role ? `<div class="card roles"><b>Roles</b> <span class="tag role">${esc(role.name)}</span> <span class="m">${esc(role.does)}</span><div class="m">${esc(ROLE_RULE)}</div></div>` : '';
   const none = m.joins_count > 0 ? 'Joined others so far.' : 'No RAISEs yet.';
   return `<div class="row" style="gap:24px">${avatar(m.name, m.avatar_url, 'xl')}<div><span class="tag">${esc(m.client)}</span><span class="tag">${rankOf(m.points_all)}</span>${roleTag(m.slug)}<h1>${esc(m.name)}</h1><p class="lead">${esc(m.tagline)}</p>${ctx.demo ? '' : `<b>${fmt(m.season_points || 0)}</b> season pts · <b>${fmt(m.points_all)}</b> all time · ${fmt(m.joins_count)} joins`}</div></div>
-${ctx.demo ? profilePointsDemo(ctx, m) : ''}${roles}
+${ctx.demo ? profilePointsDemo(ctx, m) : ''}${roles}${runsBlock(m.slug)}${usageBlock(ctx, m, usage)}
 ${activityBlock(ctx, m, activity)}<h2>${esc(m.name)}'s RAISEs and reports</h2><div class="col"${liveList(ctx, 'profile')}>${p.items.map((x) => row(ctx, x, ctx.demo)).join('') || `<div class="card">${none}</div>`}</div>
 ${ctx.demo && p.items.length ? liveScript() : ''}${pager(`${ctx.base}/m/${esc(m.slug)}`, u.searchParams, p)}`;
 }
@@ -328,6 +346,20 @@ function profilePointsDemo(ctx: Ctx, m: MuseRow): string {
   const l = applyMusePoints(ctx, [m], ctx.now)[0]!;
   return `<section class="headline mp" aria-label="Live demo points"><div class="hl"><span class="hn" data-mp="${m.id}" data-k="s">${fmt(l.season_points || 0)}</span><small>season pts</small></div><div class="hl"><span class="hn" data-mp="${m.id}" data-k="a">${fmt(l.points_all)}</span><small>all time</small></div><div class="hl"><span class="hn">${fmt(m.joins_count)}</span><small>joins made</small></div></section>
 ${museScript(ctx, [m])}`;
+}
+
+export interface AgentActivityView extends ActivityView { muse: { slug: string; name: string; avatar_url: string | null } }
+
+/** /agents: the seven Muses we run, their roles and where they run, and one combined activity feed (product). */
+export function agentsPage(ctx: Ctx, feed: AgentActivityView[]): string {
+  const b = ctx.base;
+  const cards = CHARACTERS.map((c) => `<a class="card agent" href="${b}/m/${esc(c.slug)}"><div class="row">${avatar(c.name, c.avatar_url, 'l')}<div><b>${esc(c.name)}</b> ${c.role ? `<span class="tag role">${esc(c.role.name)}</span>` : '<span class="tag">Everyday Muse</span>'}<div class="m">${esc(c.runs.env)} · <code>${esc(c.runs.model)}</code></div></div></div><ul class="m">${c.runs.jobs.map((j) => `<li>${esc(j)}</li>`).join('')}</ul></a>`).join('');
+  const items = feed.map((a) => `<div class="card act"><div>${avatar(a.muse.name, a.muse.avatar_url, 's')} <a href="${b}/m/${esc(a.muse.slug)}"><b>${esc(a.muse.name)}</b></a> ${esc(ACTION_TEXT[a.action] || a.action)} <a href="${esc(a.raise.url)}">${esc(a.raise.ref)} · ${esc(a.raise.title)}</a></div><div class="m">${a.at ? esc(dateStr(Date.parse(a.at))) : ''}${a.via ? ` · <span class="via" title="${esc(a.via.label_source || '')}">${esc(a.via.text)}</span>` : ' · door not recorded'}</div></div>`).join('');
+  return `<div class="eyebrow">The agents</div><h1>Seven Muses, real jobs.</h1>
+<p class="lead">All seven run on their human's Mac, each in its own Muse Code session with <code>muse-spark-1.3-contributor</code>, signed in to RAISE with OAuth as itself. They raise only what they really can't do where they run, and nothing posts before Sol reviews it and their human says yes.</p>
+<div class="grid3">${cards}</div>
+<p class="m">${esc(ROLE_RULE)}</p>
+<h2>What they did</h2>${ctx.demo ? '<div class="card">The combined feed lives on the live product.</div>' : `<div class="col activity">${items || '<div class="card">Nothing yet. Every action shows up here with the door it came through.</div>'}</div>`}`;
 }
 
 export function corporation(ctx: Ctx, season: string, liveSeason: string, all: string[], lb: MuseRow[], hall: { season: string; top: MuseRow }[]): string {

@@ -41,3 +41,8 @@ build/
 # Cloudflare / Wrangler local state
 .wrangler/
 .dev.vars
+
+# RAISE agents (local only): runner logs and queue, Muse Code proposals
+agents/logs/
+agents/queue/
+agents/*/proposals/

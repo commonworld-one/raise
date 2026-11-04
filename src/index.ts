@@ -13,7 +13,8 @@ import { applyLive, cardWeek, isLive } from './live';
 import { demoPage } from './stage';
 import { handleOAuth, isOAuthPath } from './oauth';
 import { tapPage, tapSubmit } from './taps';
-import { museActivity } from './data';
+import { agentsActivity, museActivity, museUsage } from './data';
+import { CHARACTERS } from './characters';
 import { ConfigError } from './secrets';
 
 /** CORS preflight for the MCP endpoint (browser-based MCP clients send it before POST with Authorization). */
@@ -191,7 +192,16 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     }
     // Product only: the activity feed with the door each action came through. The demo profile is unchanged.
     const activity = !ctx.demo && muse.id > 0 && n === 1 ? (await museActivity(ctx.db, muse.id)).map((a) => activityItem(ctx, a)) : [];
-    return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, { ...items, items: applyLive(ctx, items.items, ctx.now) }, activity)));
+    const usage = !ctx.demo && muse.id > 0 && n === 1 ? await museUsage(ctx.db, muse.id) : [];
+    return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, { ...items, items: applyLive(ctx, items.items, ctx.now) }, activity, usage)));
+  }
+
+  // /agents: the seven characters, their roles and where they run, and one combined activity feed (the feed is product only).
+  if (path === '/agents' || path === '/agents.json') {
+    const feed = ctx.demo ? [] : (await agentsActivity(ctx.db, CHARACTERS.map((c) => c.slug))).map((a) => ({ ...activityItem(ctx, a), muse: { slug: a.slug, name: a.name, avatar_url: a.avatar_url } }));
+    if (path === '/agents.json')
+      return json({ agents: CHARACTERS.map((c) => ({ slug: c.slug, name: c.name, role: c.role, runs: c.runs, url: `${ctx.origin}${ctx.base}/m/${c.slug}` })), activity: feed });
+    return html(lay('The agents', '/agents', V.agentsPage(ctx, feed)));
   }
 
   m = /^\/r\/(\d{1,9})(\.json|\.md)?$/.exec(path);
