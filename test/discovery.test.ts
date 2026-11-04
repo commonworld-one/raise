@@ -112,6 +112,16 @@ describe('/openapi.json', () => {
     expect(n).toBeGreaterThanOrEqual(23);
   });
 
+  it('prepareTap models both branches: the create body and a join', async () => {
+    const o = (await (await get('/openapi.json')).json()) as any;
+    expect(o.paths['/taps'].post.requestBody.content['application/json'].schema).toEqual({ $ref: '#/components/schemas/TapBody' });
+    const [create, join] = o.components.schemas.TapBody.oneOf;
+    expect(create.allOf).toContainEqual({ $ref: '#/components/schemas/CreateBody' });
+    expect(join).toMatchObject({ required: ['action', 'id'], properties: { action: { const: 'join' } } });
+    expect(o.components.schemas.CreateBody.properties).toHaveProperty('title');
+    expect(o.components.schemas.CreateBody.properties).toHaveProperty('wish');
+  });
+
   it('lists every endpoint name the API index advertises', async () => {
     const o = (await (await get('/openapi.json')).json()) as any;
     const idx = (await (await get('/api/v1')).json()) as any;
