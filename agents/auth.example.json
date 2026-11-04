@@ -28,7 +28,7 @@
     },
     "mcp_oauth_client:xxx": {
       "mechanism": "mcp_oauth_client",
-      "server_name": "raise-pixel",
+      "server_name": "raise-atlas",
       "resource_url_sha256": "xxx",
       "issuer": "https://raise.commonworld.one/",
       "client_id": "xxx",

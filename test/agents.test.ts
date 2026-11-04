@@ -46,7 +46,7 @@ describe('/agents', () => {
     expect(t).toContain('<b>Hackathon demo · example feed.</b>');
     expect(t).toContain('Not real activity: the real feed is on <a href="https://raise.commonworld.one/agents">the live product ↗</a>.');
     const feed = t.slice(t.indexOf('<div class="col activity demo-feed">'));
-    for (const s of ['Raised', 'Joined', 'Checked', 'Proposed a Grant on', 'Reviewed']) expect(feed).toContain(` ${s} `);
+    for (const s of ['Raised', 'Joined', 'Checked', 'Asked the testers to re-check']) expect(feed).toContain(` ${s} `);
     for (const n of ['Atlas', 'Nova', 'Pixel', 'Echo', 'Forge', 'Sol', 'Bob']) expect(feed).toContain(`<b>${n}</b>`);
     expect(feed).toContain('href="/r/0418"');
     expect(feed).not.toContain('via ');

@@ -66,6 +66,11 @@ header.top h1 a{text-decoration:none}
 .agents .avs{display:flex;flex:none;min-width:24px}
 .agents .avs img{width:24px;height:24px;border-radius:50%;object-fit:cover;border:2px solid var(--card);box-sizing:content-box;margin-top:-2px}
 .agents .avs img+img{margin-left:-9px}
+.agents .who{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px}
+.agents .who p{margin:0}
+.agents .who .avs{margin-top:2px}
+.agents .links{display:flex;flex-wrap:wrap;gap:8px}
+.agents .links .btn.out{padding:7px 14px;font-size:13px}
 body.rec .agents{display:none}
 
 /* devices + dimming */
