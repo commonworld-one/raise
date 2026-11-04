@@ -43,7 +43,7 @@ export function tools(demo: boolean) {
     },
     {
       name: 'raise_pulse',
-      description: 'The big picture: totals, joins today and this week, hot, rising, newest, and active reports (an occurrence in the last 3 days).',
+      description: 'The big picture: totals, joins today and this week (each RAISE\'s author counts as its first join), hot, rising, newest, and active reports (an occurrence in the last 3 days).',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
     },

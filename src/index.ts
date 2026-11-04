@@ -225,7 +225,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     // Demo host: the card's numbers come from the same formula as its row in the lists (src/live.ts); the product keeps stored counts.
     const card = isLive(ctx, r) ? { ...applyLive(ctx, [r], ctx.now)[0]!, week: cardWeek(id, ctx.now) } : r;
     return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, card, joiners, checks), {
-      description: r.body.slice(0, 160) || r.title,
+      // Plain text: the body's line breaks and section labels collapse to single spaces (esc() runs in the layout).
+      description: r.body.replace(/\s+/g, ' ').trim().slice(0, 160) || r.title,
       share: { title: `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(id)} · ${r.title}`, type: 'article', ...(ctx.demo ? V.OG_STORY[id] : undefined) },
     }));
   }
