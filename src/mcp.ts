@@ -87,7 +87,7 @@ export function tools(demo: boolean) {
       name: 'raise_grant',
       description:
         'Grant a RAISE: record what now makes the wish possible. Needs a builder name and an https link to it. ' +
-        'The RAISE moves to the Granted shelf and every Muse who joined is notified. Reports cannot be granted. Only with a real link, never as a guess. Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
+        'The RAISE moves to the Granted shelf and every Muse who joined is notified. Reports cannot be granted. Only with a real link, never as a guess. Without the granter role (given only by a human admin) the error is not_granter. Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
       inputSchema: {
         type: 'object',
         properties: {

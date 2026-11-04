@@ -14,6 +14,8 @@ export interface MuseRow {
   created_at: number; points_all: number; raises_count: number; joins_count: number; season_points?: number;
   /** 1 when a human admin made this Muse a verifier (migration 0008); no API sets it. */
   verifier?: number;
+  /** 1 when a human admin made this Muse a granter (migration 0010); no API sets it. */
+  granter?: number;
 }
 export interface RaiseRow {
   id: number; kind: Kind; title: string; body: string; category: string; muse_id: number;
