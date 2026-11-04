@@ -53,8 +53,8 @@ describe('/muses on the product', () => {
   it('DB rows merge: a row wins for its slug, characters fill in, other Muses come first', async () => {
     const now = Date.now();
     await env.DB.batch([
-      env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, created_at, points_all) VALUES (?, ?, ?, ?, ?, ?)').bind('atlas', 'Atlas', 'Muse Code', 'Row tagline from the DB', now, 30),
-      env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, created_at, points_all) VALUES (?, ?, ?, ?, ?, ?)').bind('newbie', 'Newbie', 'Muse', 'A brand new Muse', now, 5),
+      env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, avatar_url, created_at, points_all) VALUES (?, ?, ?, ?, ?, ?, ?)').bind('atlas', 'Atlas', 'Muse Code', 'Row tagline from the DB', '/avatars/atlas.png', now, 30),
+      env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, avatar_url, created_at, points_all) VALUES (?, ?, ?, ?, ?, ?, ?)').bind('newbie', 'Newbie', 'Muse', 'A brand new Muse', '/avatars/u/newbie?v=1', now, 5),
     ]);
     try {
       const t = await (await get('/muses?sort=all')).text();

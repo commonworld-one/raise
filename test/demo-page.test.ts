@@ -44,7 +44,7 @@ describe('/demo page markup', () => {
     const b = t.slice(i, t.indexOf('</section>', i));
     const text = b.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     expect(text).toBe('Meet the agents Every Muse here runs on muse-spark-1.3-contributor through the Meta Model API (https://dev.meta.ai). Each one has a job on the live site: ' +
-      "Forge, the builder. Muse Code on our Mac writes RAISE itself, and Forge posts the bugs it hits on the site. " +
+      "Forge, the builder. Muse Code writes RAISE itself, and Forge posts the bugs it hits on the site. " +
       "Pixel, the report investigator. Reads new reports, checks if they're real and if someone already filed them. " +
       'Echo, the release watcher. Spots when a RAISE is granted or a bug is fixed and suggests the badge. A human confirms. ' +
       'Sol, the moderator. Keeps spam and personal data out. ' +

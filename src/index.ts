@@ -1,7 +1,7 @@
 // Muse RAISE Worker. Product on raise.commonworld.one (DB), hackathon demo on raise-demo.commonworld.one (DEMO_DB).
 // The hostname picks the database; the paths are the same on both hosts.
 import type { Ctx, Env, Kind } from './types';
-import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
+import { getJoiners, getPublicMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
 import { API_PREFIX, cached, handleApi } from './api';
 import { handleMcp, tools } from './mcp';
 import { activityItem, activityJson, pageJson, museJson, raiseJson, verificationJson } from './serialize';
@@ -16,6 +16,7 @@ import { tapPage, tapSubmit } from './taps';
 import { agentsActivity, museActivity, museUsage } from './data';
 import { CHARACTERS } from './characters';
 import { ConfigError } from './secrets';
+import { serveAvatar } from './profile';
 
 /** CORS preflight for the MCP endpoint (browser-based MCP clients send it before POST with Authorization). */
 export const MCP_PREFLIGHT = {
@@ -36,7 +37,10 @@ export default {
   async fetch(req: Request, env: Env, ec: ExecutionContext): Promise<Response> {
     const u = new URL(req.url);
     const ip = req.headers.get('cf-connecting-ip') || 'local';
-    if (env.READ_LIMITER && !(await env.READ_LIMITER.limit({ key: ip })).success)
+    // Per-IP request limit (Workers Rate Limiting binding READ_LIMITER in wrangler.jsonc, 120 per minute per IP).
+    // Static files in public/ are served before the Worker and do not count. Without the binding: no limit.
+    // NO_READ_LIMIT=1 is set only by the test run (vitest.config.ts), which makes far more requests per minute.
+    if (env.READ_LIMITER && env.NO_READ_LIMIT !== '1' && !(await env.READ_LIMITER.limit({ key: ip })).success)
       return new Response('Too many requests', { status: 429, headers: { 'retry-after': '60' } });
 
     const cacheable = req.method === 'GET' && !req.headers.get('authorization') && env.NO_EDGE_CACHE !== '1';
@@ -60,7 +64,7 @@ export default {
 } satisfies ExportedHandler<Env & { NO_EDGE_CACHE?: string }>;
 
 declare module './types' {
-  interface Env { NO_EDGE_CACHE?: string }
+  interface Env { NO_EDGE_CACHE?: string; NO_READ_LIMIT?: string }
 }
 
 async function route(req: Request, env: Env, u: URL, ip: string): Promise<Response> {
@@ -99,6 +103,10 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, POST' } });
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method Not Allowed', { status: 405 });
+
+  // A Muse's uploaded avatar (src/profile.ts). Both hosts, each with its own database.
+  const av = /^\/avatars\/u\/([a-z0-9_-]{1,40})$/.exec(path);
+  if (av) return serveAvatar(ctx, av[1]!, u);
 
   // Legacy and convenience redirects
   if (path === '/leaderboard') return redirectTo(ctx, `${ctx.base}/corporation${u.search}`);
@@ -180,7 +188,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   m = /^\/m\/([a-z0-9_-]{1,40})(?:\/page\/(\d+))?(\/|\.json)?$/.exec(path);
   if (m) {
     // The seven characters always have a profile, with zero numbers when the database has no row (product).
-    const muse = (await getMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!);
+    const muse = (await getPublicMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!); // a draft is a 404
     if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     if (!muse) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
     const n = page(m[2]);

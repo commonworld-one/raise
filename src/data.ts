@@ -4,6 +4,7 @@ import type { Active, Kind, Sort } from './types';
 import { CHARACTERS, characterMuse, type Character } from './characters';
 import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
 import type { Via } from './doors';
+import { PUBLIC_MUSE_SQL, isDraft } from './draft';
 
 /** A write with no recorded door (the default before migration 0004, and in direct data calls). */
 export const NO_VIA: Via = { door: '', label: '', channel: '' };
@@ -130,7 +131,7 @@ export interface Joiner { slug: string; name: string; client: string; avatar_url
 export async function getJoiners(db: D1Database, raiseId: number, limit = 8): Promise<Joiner[]> {
   const r = await db
     .prepare(`SELECT m.slug, m.name, m.client, m.avatar_url, j.note, j.created_at FROM joins j JOIN muses m ON m.id = j.muse_id
-      WHERE j.raise_id = ? AND j.muse_id != (SELECT muse_id FROM raises WHERE id = ?) ORDER BY j.created_at DESC LIMIT ?`)
+      WHERE j.raise_id = ? AND j.muse_id != (SELECT muse_id FROM raises WHERE id = ?) AND ${PUBLIC_MUSE_SQL} ORDER BY j.created_at DESC LIMIT ?`)
     .bind(raiseId, raiseId, limit)
     .all<Joiner>();
   return r.results;
@@ -166,7 +167,8 @@ function characterMatches(c: Character, p: MuseListParams): boolean {
  * lists them. A row with a character's slug wins over the static entry.
  */
 export async function listMuses(db: D1Database, p: MuseListParams, now: number): Promise<Page<MuseRow>> {
-  const where: string[] = ['1 = 1'];
+  // Drafts (no name and avatar yet, src/draft.ts) are never listed.
+  const where: string[] = [PUBLIC_MUSE_SQL];
   const args: unknown[] = [];
   if (p.client) { where.push('m.client = ?'); args.push(p.client); }
   const rr = p.rank ? rankRange(p.rank) : null;
@@ -183,7 +185,7 @@ export async function listMuses(db: D1Database, p: MuseListParams, now: number):
       LEFT JOIN muse_points mp ON mp.muse_id = m.id AND mp.season = ?
       WHERE ${w} ORDER BY ${order}, m.id LIMIT ? OFFSET ?`).bind(seasonOf(now), ...args, perPage, offset),
     db.prepare(`SELECT COUNT(*) AS n FROM muses m WHERE ${w}`).bind(...args),
-    db.prepare(`SELECT slug FROM muses WHERE slug IN (${slugs.map(() => '?').join(', ')})`).bind(...slugs),
+    db.prepare(`SELECT slug FROM muses m WHERE slug IN (${slugs.map(() => '?').join(', ')}) AND ${PUBLIC_MUSE_SQL}`).bind(...slugs),
   ]);
   const dbTotal = (cnt!.results[0] as { n: number }).n;
   const taken = new Set((have!.results as { slug: string }[]).map((r) => r.slug));
@@ -196,6 +198,12 @@ export async function listMuses(db: D1Database, p: MuseListParams, now: number):
   const total = dbTotal + extra.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   return { items, total, page, perPage, pages, hasMore: page < pages };
+}
+
+/** A Muse for public pages and the public API: null for a draft (src/draft.ts), as if it did not exist. */
+export async function getPublicMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {
+  const m = await getMuse(db, slug, now);
+  return m && !isDraft(m) ? m : null;
 }
 
 export async function getMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {
@@ -215,7 +223,7 @@ export async function seasons(db: D1Database, now: number): Promise<string[]> {
 export async function leaderboard(db: D1Database, season: string, limit = 50): Promise<MuseRow[]> {
   const r = await db
     .prepare(`SELECT m.*, mp.points AS season_points FROM muse_points mp JOIN muses m ON m.id = mp.muse_id
-      WHERE mp.season = ? AND mp.points > 0 ORDER BY mp.points DESC, m.points_all DESC LIMIT ?`)
+      WHERE mp.season = ? AND mp.points > 0 AND ${PUBLIC_MUSE_SQL} ORDER BY mp.points DESC, m.points_all DESC LIMIT ?`)
     .bind(season, limit)
     .all<MuseRow>();
   return r.results;
@@ -233,7 +241,7 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
       (SELECT COUNT(*) FROM raises WHERE kind = 'raise' AND hidden = 0 AND granted_at IS NULL) AS raises,
       (SELECT COUNT(*) FROM raises WHERE kind = 'report' AND hidden = 0) AS reports,
       (SELECT COUNT(*) FROM raises WHERE granted_at IS NOT NULL AND hidden = 0) AS granted,
-      (SELECT COUNT(*) FROM muses) AS muses,
+      (SELECT COUNT(*) FROM muses m WHERE ${PUBLIC_MUSE_SQL}) AS muses,
       (SELECT COALESCE(SUM(joins), 0) FROM raise_daily WHERE day = ?) AS joins_today,
       (SELECT COALESCE(SUM(joins), 0) FROM raise_daily WHERE day >= ?) AS joins_week`).bind(today, d7),
   ]);
@@ -550,16 +558,16 @@ export async function agentsActivity(db: D1Database, slugs: string[], limit = 40
     .prepare(`SELECT * FROM (
         SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
                r.via_door, r.via_label, r.via_channel, m.slug, m.name, m.avatar_url, 0 AS ord
-          FROM raises r JOIN muses m ON m.id = r.muse_id WHERE m.slug IN (${marks}) AND r.hidden = 0
+          FROM raises r JOIN muses m ON m.id = r.muse_id WHERE m.slug IN (${marks}) AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
         SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
                j.via_door, j.via_label, j.via_channel, m.slug, m.name, m.avatar_url, 1
           FROM joins j JOIN raises r ON r.id = j.raise_id JOIN muses m ON m.id = j.muse_id
-          WHERE m.slug IN (${marks}) AND r.muse_id != j.muse_id AND r.hidden = 0
+          WHERE m.slug IN (${marks}) AND r.muse_id != j.muse_id AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
         SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, m.slug, m.name, m.avatar_url, 2
           FROM grants g JOIN raises r ON r.id = g.raise_id JOIN muses m ON m.id = g.muse_id
-          WHERE m.slug IN (${marks}) AND g.hidden = 0 AND r.hidden = 0
+          WHERE m.slug IN (${marks}) AND g.hidden = 0 AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
       ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?1`)
     .bind(limit, ...slugs)
     .all<AgentActivityRow & { ord: number }>();

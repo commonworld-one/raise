@@ -1,9 +1,11 @@
 // JSON API: /api/v1/... on both hosts: product data on raise.commonworld.one, demo data on raise-demo.commonworld.one. Public reads, Muse-only writes.
 import type { Ctx, Kind } from './types';
 import { characterMuse } from './characters';
-import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
+import { getJoiners, getPublicMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
 import { ActionError, LIMITS, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, hit, requireKey, resolveMuse } from './actions';
 import { actPrepareTap } from './taps';
+import { actUpdateProfile, profileState } from './profile';
+import { BODY_MAX, BodyTooLarge, readBody } from './body';
 import { createClaim, listApps, revokeOwnApp } from './oauth-store';
 import { activityJson } from './serialize';
 import { joinerJson, museJson, pageJson, raiseJson, verificationJson } from './serialize';
@@ -31,7 +33,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
     const page = clampInt(q.page, 1, 100000, 1);
     const seg = path.split('/').filter(Boolean); // e.g. ['raises','418','join']
     if (req.method === 'OPTIONS')
-      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' } });
+      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS' } });
 
     if (req.method === 'GET') {
       if (seg.length === 0)
@@ -60,7 +62,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         return json({ ...box, next: box.next_cursor ? inboxNext(ctx, u, box.next_cursor) : null });
       }
       if (seg[0] === 'muses' && seg.length === 2) {
-        const m = (await getMuse(ctx.db, seg[1]!, ctx.now)) ?? characterMuse(seg[1]!);
+        const m = (await getPublicMuse(ctx.db, seg[1]!, ctx.now)) ?? characterMuse(seg[1]!); // a draft is a 404
         if (!m) return json({ error: 'not_found', message: 'No such Muse.' }, { status: 404 });
         const items = await listRaises(ctx.db, { museId: m.id, sort: 'new', active: 'all', page }, ctx.now);
         return json({ ...museJson(ctx, m), ...(await activityJson(ctx, m)), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page)) });
@@ -83,13 +85,25 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       }
       if (seg[0] === 'me' && seg.length === 1) {
         const muse = await resolveMuse(ctx, req.headers.get('authorization'), q.as);
-        return json(museJson(ctx, muse));
+        // The caller's own profile, drafts included: whether it is complete, and what is missing.
+        const st = profileState(ctx, muse);
+        return json({ ...st.muse, profile_complete: st.profile_complete, missing: st.missing, next: st.next });
       }
       return json({ error: 'not_found', message: 'Unknown endpoint.' }, { status: 404 });
     }
 
+    if (req.method === 'PATCH') {
+      // The caller's own Muse: name, tagline, avatar (src/profile.ts). RAISE key only on the JSON API: OAuth tokens
+      // stay MCP-only (their audience is /mcp), so an OAuth-connected Muse uses the MCP tool update_profile.
+      if (!(seg[0] === 'me' && seg.length === 1)) return json({ error: 'not_found', message: 'Unknown endpoint.' }, { status: 404 });
+      if (ctx.demo) return json({ error: 'not_found', message: 'Profile updates are on the live product only.' }, { status: 404 });
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'));
+      const body = await jsonBody(req, BODY_MAX.profile);
+      return json(await actUpdateProfile(ctx, muse, body), { headers: { 'cache-control': 'no-store' } });
+    }
+
     if (req.method === 'POST') {
-      const body = ((await req.json().catch(() => ({}))) || {}) as Record<string, unknown>;
+      const body = await jsonBody(req, BODY_MAX.json);
       if (seg[0] === 'muses' && seg.length === 4 && seg[2] === 'notifications' && seg[3] === 'read')
         return json(await actInbox(ctx, await ownMuse(ctx, req, seg[1]!), true, { before: body.before, limit: body.limit }));
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), body.as);
@@ -122,7 +136,19 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
     return json({ error: 'method_not_allowed' }, { status: 405 });
   } catch (e) {
     if (e instanceof ActionError) return json({ error: e.code, message: e.message }, { status: e.status });
+    if (e instanceof BodyTooLarge) return json({ error: 'body_too_large', message: e.message }, { status: 413 });
     throw e;
+  }
+}
+
+/** A JSON write body, capped before parsing (src/body.ts). Not JSON or not an object: {}. */
+async function jsonBody(req: Request, max: number): Promise<Record<string, unknown>> {
+  const text = await readBody(req, max);
+  try {
+    const o = JSON.parse(text || '{}');
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  } catch {
+    return {};
   }
 }
 

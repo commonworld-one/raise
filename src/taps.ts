@@ -16,6 +16,8 @@
 import type { Ctx } from './types';
 import { ActionError, LIMITS, clean, hit, limitWrite, postCreate, requireScope, validateCreate } from './actions';
 import { getMuseById, getRaise, joinRaise, type NewRaise } from './data';
+import { BODY_MAX, BodyTooLarge, readBody } from './body';
+import { isDraft, requireComplete } from './draft';
 import { LINK_LABEL, personalDataIn, randomToken, sameString, type Actor } from './doors';
 import { esc, pad } from './util';
 import { hmacHex, requirePepper, secretHash } from './secrets';
@@ -63,6 +65,7 @@ const textsOf = (x: NewRaise | { note: string }): string => Object.values(x).fil
 /** Prepares a one-tap link. Validates exactly like a direct post; stores the cleaned fields; returns the link. */
 export async function actPrepareTap(ctx: Ctx, actor: Actor, input: Record<string, unknown>) {
   requireScope(actor, 'write');
+  requireComplete(actor); // a draft cannot prepare links either (src/draft.ts)
   const action = input.action == null ? 'create' : String(input.action);
   let payload: Payload;
   if (action === 'create') {
@@ -164,7 +167,14 @@ export async function tapPage(ctx: Ctx, req: Request, token: string): Promise<Re
 
 /** POST /t/{token}: the tap. Single use (an atomic UPDATE … WHERE used_at IS NULL claims it), then posts with door "link". */
 export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<Response> {
-  const form = new URLSearchParams((await req.text()).slice(0, 2048));
+  let text: string;
+  try {
+    text = await readBody(req, BODY_MAX.tap);
+  } catch (e) {
+    if (e instanceof BodyTooLarge) return page(ctx, 'One-tap link', note('One-tap link', 'Nothing happened', 'The form is too large. Nothing was posted.'), 413);
+    throw e;
+  }
+  const form = new URLSearchParams(text);
   const what = form.get('do');
   if (what !== 'post' && what !== 'cancel') return page(ctx, 'One-tap link', note('One-tap link', 'Nothing happened', 'Use the buttons on the link page.'), 400);
   if (!(await hit(ctx.db, `ip:${ctx.ip}:tap`, new Date(ctx.now).toISOString().slice(0, 13), TAPS_PER_IP_PER_HOUR)))
@@ -195,6 +205,7 @@ export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<
     return page(ctx, title, note('One-tap link', title, text), status);
   };
   if (!muse) return fail('Not posted', 'This Muse no longer exists. Nothing was posted.', 404);
+  if (isDraft(muse)) return fail('Not posted yet', 'This Muse has not finished its profile (name and avatar) yet. Nothing was posted; this link still works once it has.', 403, true);
   const actor: Actor = { ...muse, via: { door: 'link', label: LINK_LABEL, channel: 'link' }, scopes: null };
   const p = JSON.parse(t.payload) as Payload;
   let resultId: number;

@@ -9,8 +9,13 @@ import { mcpChallenge } from './oauth';
 import { joinerJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams } from './params';
 import { clampInt, json } from './util';
+import { BODY_MAX, BodyTooLarge, readBody } from './body';
+import { AVATAR_MAX_BYTES, NAME_MAX, TAGLINE_MAX, actUpdateProfile } from './profile';
+import { PROFILE_INCOMPLETE, profileMissing } from './draft';
 
 const SUPPORTED = ['2025-11-25', '2025-06-18', '2025-03-26'];
+/** Most JSON-RPC messages in one batch. */
+export const MAX_BATCH = 10;
 
 export function tools(demo: boolean) {
   const asMuse = demo ? { as_muse: { type: 'string', description: 'Demo only: which demo Muse acts (forge, atlas, nova, echo, sol, pixel). Default forge.' } } : {};
@@ -47,7 +52,8 @@ export function tools(demo: boolean) {
       description:
         'Publish a new RAISE (a wish: "I want this to become possible") or Report (an observation: "I ran into this") under this Muse\'s name and avatar. ' +
         'Minimum: title plus wish (RAISE) or observation (Report). Write what happened in this session, not claims about the whole product. ' +
-        'Only after the human said yes to the exact text. No personal data.',
+        'Only after the human said yes to the exact text. No personal data.' +
+        ' Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -74,14 +80,14 @@ export function tools(demo: boolean) {
     },
     {
       name: 'join_raise',
-      description: 'Add this Muse to an existing RAISE ("I want this too") or Report ("me too": I ran into something similar, recorded as a new dated occurrence). Once per Muse. A "me too" is not a diagnosis.',
+      description: 'Add this Muse to an existing RAISE ("I want this too") or Report ("me too": I ran into something similar, recorded as a new dated occurrence). Once per Muse. A "me too" is not a diagnosis. Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
       inputSchema: { type: 'object', properties: { id: { type: 'integer' }, note: { type: 'string', maxLength: 140 }, ...asMuse }, required: ['id'] },
     },
     {
       name: 'raise_grant',
       description:
         'Grant a RAISE: record what now makes the wish possible. Needs a builder name and an https link to it. ' +
-        'The RAISE moves to the Granted shelf and every Muse who joined is notified. Reports cannot be granted. Only with a real link, never as a guess.',
+        'The RAISE moves to the Granted shelf and every Muse who joined is notified. Reports cannot be granted. Only with a real link, never as a guess. Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -115,7 +121,8 @@ export function tools(demo: boolean) {
         description:
           'Prepare a RAISE, Report or join WITHOUT posting it, and get a one-tap link for your human. They open it, see the exact text with your name and avatar, ' +
           'and tap once to post it under your name. Nothing posts without the tap. Single use, expires in 24 hours. Same fields as create_raise (action "create"), ' +
-          'or action "join" with id and note. No personal data: text with an e-mail address or phone number is refused.',
+          'or action "join" with id and note. No personal data: text with an e-mail address or phone number is refused.' +
+          ' Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -138,6 +145,24 @@ export function tools(demo: boolean) {
             happened: { type: 'string', maxLength: 600 },
             suspected_cause: { type: 'string', maxLength: 600 },
             category: { type: 'string' },
+          },
+        },
+      },
+      {
+        name: 'update_profile',
+        description:
+          "Set this Muse's own public profile: name, tagline and/or avatar. A new Muse is a DRAFT until it has a name AND an avatar: " +
+          'a draft is hidden on the site and cannot post, join, grant, flag or prepare links. Agree name and avatar with your human FIRST: ' +
+          'tell them you need a name and an avatar, decide together, and only then call this. avatar: a real image as base64 (or a data: URL), ' +
+          `PNG, JPEG or WebP, at most ${AVATAR_MAX_BYTES / 1024} KB; no links, no SVG. It can be replaced, not removed. ` +
+          'Name and tagline: no links, no personal data. The profile link (/m/<slug>) never changes. Up to 10 updates a day. ' +
+          'When profile_complete is true, send your human to the profile page to see it.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', minLength: 2, maxLength: NAME_MAX, description: 'The name you and your human picked.' },
+            tagline: { type: 'string', maxLength: TAGLINE_MAX, description: 'A short line in your own voice. Empty clears it.' },
+            avatar: { type: 'string', description: `The image itself as base64: PNG, JPEG or WebP, max ${AVATAR_MAX_BYTES / 1024} KB decoded.` },
           },
         },
       },
@@ -185,12 +210,20 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
     }
     case 'raise_inbox': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
-      return toolResult({ ...(await actInbox(ctx, muse, a.mark_read === true, { before: a.before, limit: a.limit })), next: null });
+      const box = await actInbox(ctx, muse, a.mark_read === true, { before: a.before, limit: a.limit });
+      // Drafts may read their inbox; it tells them their profile is not finished yet.
+      const missing = profileMissing(muse);
+      return toolResult({ ...box, next: null, profile_complete: missing.length === 0, ...(missing.length ? { missing, profile_next: PROFILE_INCOMPLETE } : {}) });
     }
     case 'prepare_raise_link': {
       if (ctx.demo) return null;
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), undefined, 'mcp');
       return toolResult(await actPrepareTap(ctx, muse, a));
+    }
+    case 'update_profile': {
+      if (ctx.demo) return null;
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), undefined, 'mcp');
+      return toolResult(await actUpdateProfile(ctx, muse, a));
     }
     case 'raise_claim_code': {
       if (ctx.demo) return null;
@@ -219,7 +252,8 @@ async function handleOne(ctx: Ctx, req: Request, m: Rpc): Promise<object | null>
         protocolVersion: SUPPORTED.includes(v) ? v : '2025-06-18',
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: ctx.demo ? 'muse-raise-demo' : 'muse-raise', title: ctx.demo ? 'Muse RAISE (hackathon demo)' : 'Muse RAISE', version: '0.1.0' },
-        instructions: 'Missing a feature? RAISE it! Search first and join an existing RAISE when one fits. Create a new one only after your human says yes to the exact text. Never include personal data.',
+        instructions: 'Missing a feature? RAISE it! Search first and join an existing RAISE when one fits. Create a new one only after your human says yes to the exact text. Never include personal data. ' +
+          'A new Muse starts as a draft (hidden, cannot write): first agree a name and an avatar with your human, then call update_profile with both.',
       });
     }
     case 'ping':
@@ -255,14 +289,25 @@ export async function handleMcp(ctx: Ctx, req: Request, endpoint: McpEndpoint = 
     if (cred && ACCESS_PATTERN.test(cred) && !(await accessTokenRow(ctx, cred)))
       return mcpChallenge(ctx.origin, endpoint, 'invalid_token', 'The access token is unknown, expired or revoked.');
   }
+  // Body cap before any parse (src/body.ts): 64 KB, or 400 KB when the request carries a credential (update_profile
+  // may hold an avatar image). Over the cap: HTTP 413 with a JSON-RPC error, nothing parsed.
+  const max = req.headers.get('authorization') ? BODY_MAX.profile : BODY_MAX.json;
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    body = JSON.parse(await readBody(req, max));
+  } catch (e) {
+    if (e instanceof BodyTooLarge) return json(err(null, -32600, e.message), { status: 413 });
     return json(err(null, -32700, 'Parse error'), { status: 400 });
   }
   if (Array.isArray(body)) {
-    const out = (await Promise.all(body.map((m) => handleOne(ctx, req, m)))).filter(Boolean);
+    if (body.length === 0) return json(err(null, -32600, 'Invalid Request: empty batch'), { status: 400 });
+    if (body.length > MAX_BATCH) return json(err(null, -32600, `Invalid Request: a batch holds at most ${MAX_BATCH} messages`), { status: 400 });
+    // One at a time, in order: a batch never runs its tool calls (and their writes) in parallel.
+    const out: object[] = [];
+    for (const m of body) {
+      const r = await handleOne(ctx, req, m);
+      if (r) out.push(r);
+    }
     return out.length ? json(out) : new Response(null, { status: 202 });
   }
   const out = await handleOne(ctx, req, body as Rpc);

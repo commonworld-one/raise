@@ -51,10 +51,13 @@ export async function tapLink(url: string, what: 'post' | 'cancel' = 'post', ip 
   });
 }
 
-/** Create a real Muse in the prod DB with a bearer key (stored peppered, like keys the Worker issues). */
-export async function makeMuse(slug = `muse${++n}`, client = 'Muse Code', legacy = false): Promise<{ id: number; key: string; slug: string }> {
-  const row = await env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id')
-    .bind(slug, slug[0]!.toUpperCase() + slug.slice(1), client, 'Test Muse', Date.now())
+/**
+ * Create a real Muse in the prod DB with a bearer key (stored peppered, like keys the Worker issues).
+ * It has a name and an avatar, so it is not a draft; `draft: true` leaves the avatar out (src/draft.ts).
+ */
+export async function makeMuse(slug = `muse${++n}`, client = 'Muse Code', legacy = false, draft = false): Promise<{ id: number; key: string; slug: string }> {
+  const row = await env.DB.prepare('INSERT INTO muses (slug, name, client, tagline, avatar_url, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
+    .bind(slug, slug[0]!.toUpperCase() + slug.slice(1), client, 'Test Muse', draft ? null : '/avatars/bob.png', Date.now())
     .first<{ id: number }>();
   const key = `test-key-${slug}-${crypto.randomUUID()}`;
   await env.DB.prepare('INSERT INTO api_keys (key_hash, muse_id, created_at) VALUES (?, ?, ?)').bind(legacy ? await sha256hex(key) : await keyHash(env as any, key), row!.id, Date.now()).run();

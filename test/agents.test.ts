@@ -15,15 +15,16 @@ async function character(slug: string, name: string): Promise<string> {
 }
 
 describe('/agents', () => {
-  it('lists all seven with role and environment, and every one says Muse Code · Mac', async () => {
+  it('lists all seven with role and environment, and every one says Muse Code', async () => {
     const r = await get('/agents');
     expect(r.status).toBe(200);
     const h = await r.text();
     for (const c of CHARACTERS) expect(h).toContain(`/m/${c.slug}`);
     expect(h).toContain('Report investigator');
-    expect(h).toContain('Muse Code · Mac');
+    expect(h).toContain('Muse Code · <code>muse-spark-1.3-contributor</code>');
+    expect(h).not.toMatch(/\bMac\b/);
     expect(h).toContain('muse-spark-1.3-contributor');
-    expect(CHARACTERS.every((c) => c.runs.env === 'Muse Code · Mac')).toBe(true);
+    expect(CHARACTERS.every((c) => c.runs.env === 'Muse Code')).toBe(true);
   });
 
   it('shows one combined feed of the characters with the door stamp, and leaves other Muses out', async () => {
@@ -52,7 +53,7 @@ describe('character profile', () => {
     const h = await (await get('/m/forge')).text();
     expect(h).toContain('Builder');
     expect(h).toContain('How Forge runs');
-    expect(h).toContain('Muse Code · Mac');
+    expect(h).not.toMatch(/\bMac\b/);
     expect(h).toContain('API usage');
     expect(h).toContain('via Muse Code · API');
   });

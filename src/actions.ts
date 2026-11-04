@@ -6,10 +6,11 @@ import { ActionError } from './errors';
 import { keyLookupHashes } from './secrets';
 import { KEY_LABEL_DEFAULT, hasScope, oauthLabel, type Actor, type Channel, type Scope } from './doors';
 import { ACCESS_PATTERN, accessTokenRow } from './oauth-store';
+import { requireComplete } from './draft';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
 export const LIMITS = {
-  musePerDay: { create: 5, join: 100, flag: 20, grant: 10, tap: 20, claim: 10 },
+  musePerDay: { create: 5, join: 100, flag: 20, grant: 10, tap: 20, claim: 10, profile: 10 },
   ipPerHour: 60,
 };
 
@@ -116,12 +117,14 @@ export function validateCreate(input: Record<string, unknown>): NewRaise {
 
 export async function actCreate(ctx: Ctx, muse: Actor, input: Record<string, unknown>) {
   requireScope(muse, 'write');
+  requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
   const x = validateCreate(input);
   return postCreate(ctx, muse, x);
 }
 
 /** Posts an already validated RAISE or Report as this Muse (also the one-tap link's final step). */
 export async function postCreate(ctx: Ctx, muse: Actor, x: NewRaise) {
+  requireComplete(muse);
   await limitWrite(ctx, muse.id, 'create');
   const id = await createRaise(ctx.db, muse.id, x, ctx.now, muse.via);
   return { id, url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}` };
@@ -129,6 +132,7 @@ export async function postCreate(ctx: Ctx, muse: Actor, x: NewRaise) {
 
 export async function actJoin(ctx: Ctx, muse: Actor, id: number, note: unknown) {
   requireScope(muse, 'write');
+  requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
   await limitWrite(ctx, muse.id, 'join');
   const r = await joinRaise(ctx.db, muse.id, id, clean(note, 140), ctx.now, muse.via);
   if (!r.ok) throw new ActionError(r.error === 'not_found' ? 404 : 409, r.error, r.error === 'not_found' ? 'No such RAISE.' : 'Already granted.');
@@ -137,6 +141,7 @@ export async function actJoin(ctx: Ctx, muse: Actor, id: number, note: unknown) 
 
 export async function actFlag(ctx: Ctx, muse: Actor, id: number, reason: unknown) {
   requireScope(muse, 'write');
+  requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
   await limitWrite(ctx, muse.id, 'flag');
   const r = await flagRaise(ctx.db, muse.id, id, clean(reason, 200), ctx.now);
   if (!r) throw new ActionError(404, 'not_found', 'No such RAISE.');
@@ -146,6 +151,7 @@ export async function actFlag(ctx: Ctx, muse: Actor, id: number, reason: unknown
 /** A grant needs a builder name and an https link to what makes the wish possible. */
 export async function actGrant(ctx: Ctx, muse: Actor, id: number, input: Record<string, unknown>) {
   requireScope(muse, 'write');
+  requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
   const builder = clean(input.builder, 60);
   const link = clean(input.link, 500);
   const note = clean(input.note, 280);
@@ -168,6 +174,7 @@ export async function actGrant(ctx: Ctx, muse: Actor, id: number, input: Record<
 
 export async function actFlagGrant(ctx: Ctx, muse: Actor, grantId: number, reason: unknown) {
   requireScope(muse, 'write');
+  requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
   await limitWrite(ctx, muse.id, 'flag');
   const r = await flagGrant(ctx.db, muse.id, grantId, clean(reason, 200), ctx.now);
   if (!r) throw new ActionError(404, 'not_found', 'No such grant.');

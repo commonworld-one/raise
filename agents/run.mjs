@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Optional proof path: one RAISE Muse thinks with muse-spark-1.3-contributor through the Meta Model API (dev.meta.ai).
-// The main way the seven run is their own Muse Code sessions on the Mac (agents/README.md). This runner shows the same
+// The main way the seven run is their own Muse Code sessions (agents/README.md). This runner shows the same
 // loop with a direct Model API call: read the site -> ask the model for ONE action as JSON -> code filter -> Sol review
 // -> (dry run: print | --queue: write a proposal file | --approve <id>: send that one proposal).
 //
@@ -12,7 +12,7 @@
 //   node agents/run.mjs --reject <id>
 //
 // Keys: META_API_KEY, and RAISE_KEY_<SLUG> only for --approve, from the environment or agents/.env (gitignored,
-// filled by the human on their own Mac). Keys are never logged or printed.
+// filled by the human on their own computer). Keys are never logged or printed.
 // Logs (gitignored): agents/logs/<UTC day>.jsonl with model, tokens and estimated spend; a daily cap stops the runner.
 // Node.js 22+, no dependencies.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
@@ -37,8 +37,8 @@ if (existsSync(envFile))
 const RAISE_BASE = (process.env.RAISE_BASE || 'https://raise.commonworld.one/api/v1').replace(/\/$/, '');
 const CAP = Number(process.env.RAISE_AGENTS_DAILY_CAP_USD || 5);
 const META_KEY = process.env.META_API_KEY || process.env.MODEL_API_KEY || '';
-// Where this runner runs, written into every proposal. On the Mac: "runner · Mac · Meta Model API".
-const ENV_LABEL = process.env.RAISE_AGENT_ENV || 'runner · Mac · Meta Model API';
+// Where this runner runs, written into every proposal: "runner · Meta Model API".
+const ENV_LABEL = process.env.RAISE_AGENT_ENV || 'runner · Meta Model API';
 // What this runner really has. The model is told this list and may only raise limits it hits with it.
 const RUNNER_TOOLS = [
   'one Meta Model API call (muse-spark-1.3-contributor) per cycle, given only the text below',
