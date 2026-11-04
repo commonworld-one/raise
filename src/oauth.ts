@@ -134,6 +134,7 @@ async function tokenRate(ctx: Ctx) {
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/;
 
 async function register(ctx: Ctx, req: Request): Promise<Response> {
+  requirePepper(ctx.env); // fail closed: an app registered now could get no code or token anyway
   if (!(await hit(ctx.db, `ip:${ctx.ip}:oauth-reg`, new Date(ctx.now).toISOString().slice(0, 13), DCR.clientsPerIpPerHour)))
     throw new OAuthError(429, 'slow_down', 'too many registrations from this address; try again next hour', { 'retry-after': '3600' });
   const text = await req.text();
@@ -192,6 +193,7 @@ const tokenBody = (t: { access_token: string; refresh_token: string | null; expi
 });
 
 async function token(ctx: Ctx, req: Request): Promise<Response> {
+  requirePepper(ctx.env);
   await tokenRate(ctx);
   const p = await readParams(req);
   const grantType = p.get('grant_type');
