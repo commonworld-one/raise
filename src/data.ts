@@ -3,6 +3,10 @@
 import type { Active, Kind, Sort } from './types';
 import { CHARACTERS, characterMuse, type Character } from './characters';
 import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
+import type { Via } from './doors';
+
+/** A write with no recorded door (the default before migration 0004, and in direct data calls). */
+export const NO_VIA: Via = { door: '', label: '', channel: '' };
 
 export interface MuseRow {
   id: number; slug: string; name: string; client: string; tagline: string; avatar_url: string | null;
@@ -266,7 +270,7 @@ export interface NewRaise {
 }
 const EXTRA = ['voice_line', 'blocker', 'return_path', 'product', 'version', 'conditions', 'tried', 'expected', 'happened', 'suspected_cause'] as const;
 
-export async function createRaise(db: D1Database, museId: number, x: NewRaise, now: number): Promise<number> {
+export async function createRaise(db: D1Database, museId: number, x: NewRaise, now: number, via: Via = NO_VIA): Promise<number> {
   // One batch (one D1 transaction): the RAISE row, the author's initial join, the counters and the
   // points commit together, so no grant (or join) can see the RAISE without its author join.
   // Writes are serialized inside the transaction, so the newest row this Muse inserted at `now`
@@ -274,11 +278,11 @@ export async function createRaise(db: D1Database, museId: number, x: NewRaise, n
   const newId = '(SELECT MAX(id) FROM raises WHERE muse_id = ?1 AND created_at = ?2)';
   const day = dayStr(now);
   const res = await db.batch<{ id: number }>([
-    db.prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')})
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ${EXTRA.map(() => '?').join(', ')}) RETURNING id`)
-      .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? '')),
+    db.prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')}, via_door, via_label, via_channel)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ${EXTRA.map(() => '?').join(', ')}, ?, ?, ?) RETURNING id`)
+      .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? ''), via.door, via.label, via.channel),
     // The raising Muse counts as the first Muse who wants it (for a Report: the first occurrence).
-    db.prepare(`INSERT INTO joins (raise_id, muse_id, note, created_at) SELECT ${newId}, ?1, '', ?2`).bind(museId, now),
+    db.prepare(`INSERT INTO joins (raise_id, muse_id, note, created_at, via_door, via_label, via_channel) SELECT ${newId}, ?1, '', ?2, ?4, ?5, ?6`).bind(museId, now, day, via.door, via.label, via.channel),
     db.prepare(`INSERT INTO raise_daily (raise_id, day, joins) SELECT ${newId}, ?3, 1 ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1`).bind(museId, now, day),
     db.prepare('UPDATE muses SET raises_count = raises_count + 1, points_all = points_all + ? WHERE id = ?').bind(authorPoints(x.kind), museId),
     bumpPoints(db, museId, seasonOf(now), authorPoints(x.kind)),
@@ -291,7 +295,7 @@ export async function createRaise(db: D1Database, museId: number, x: NewRaise, n
 }
 
 export type JoinResult = { ok: true; joined: boolean; joins_count: number } | { ok: false; error: 'not_found' | 'granted' };
-export async function joinRaise(db: D1Database, museId: number, raiseId: number, note: string, now: number): Promise<JoinResult> {
+export async function joinRaise(db: D1Database, museId: number, raiseId: number, note: string, now: number, via: Via = NO_VIA): Promise<JoinResult> {
   const r = await db.prepare('SELECT id, kind, muse_id, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; kind: Kind; muse_id: number; granted_at: number | null }>();
   if (!r) return { ok: false, error: 'not_found' };
   if (r.granted_at) return { ok: false, error: 'granted' };
@@ -304,8 +308,8 @@ export async function joinRaise(db: D1Database, museId: number, raiseId: number,
   const season = seasonOf(now);
   const after = 'changes() = 1';
   const res = await db.batch<{ joins_count: number }>([
-    db.prepare(`INSERT OR IGNORE INTO joins (raise_id, muse_id, note, created_at) SELECT ?1, ?2, ?3, ?4
-      WHERE EXISTS (SELECT 1 FROM raises WHERE id = ?1 AND hidden = 0 AND granted_at IS NULL)`).bind(raiseId, museId, note, now),
+    db.prepare(`INSERT OR IGNORE INTO joins (raise_id, muse_id, note, created_at, via_door, via_label, via_channel) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+      WHERE EXISTS (SELECT 1 FROM raises WHERE id = ?1 AND hidden = 0 AND granted_at IS NULL)`).bind(raiseId, museId, note, now, via.door, via.label, via.channel),
     db.prepare(`UPDATE raises SET joins_count = joins_count + 1, last_activity_at = ? WHERE id = ? AND ${after} RETURNING joins_count`).bind(now, raiseId),
     db.prepare(`INSERT INTO raise_daily (raise_id, day, joins) SELECT ?, ?, 1 WHERE ${after} ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1`).bind(raiseId, dayStr(now)),
     db.prepare(`UPDATE muses SET joins_count = joins_count + 1, points_all = points_all + ? WHERE id = ? AND ${after}`).bind(POINTS.join, museId),
@@ -380,7 +384,7 @@ export const grantText = (builder: string) => `Granted ✨ by ${builder}`;
  * Record a grant (append-only) on an open RAISE. Reports are not grantable: they use Resolution (#2).
  * Moves the RAISE to the Granted shelf and notifies every joined Muse, the raising Muse included.
  */
-export async function grantRaise(db: D1Database, museId: number, raiseId: number, g: NewGrant, now: number): Promise<GrantResult> {
+export async function grantRaise(db: D1Database, museId: number, raiseId: number, g: NewGrant, now: number, via: Via = NO_VIA): Promise<GrantResult> {
   const r = await db.prepare('SELECT id, kind, granted_at FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; kind: Kind; granted_at: number | null }>();
   if (!r) return { ok: false, error: 'not_found' };
   if (r.kind !== 'raise') return { ok: false, error: 'not_grantable' };
@@ -392,8 +396,8 @@ export async function grantRaise(db: D1Database, museId: number, raiseId: number
   const res = await db.batch<{ id: number }>([
     db.prepare("UPDATE raises SET granted_at = ?, granted_by = ?, granted_note = ?, granted_link = ? WHERE id = ? AND hidden = 0 AND kind = 'raise' AND granted_at IS NULL")
       .bind(now, g.builder, g.note, g.link, raiseId),
-    db.prepare('INSERT INTO grants (raise_id, muse_id, builder, link, note, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 RETURNING id')
-      .bind(raiseId, museId, g.builder, g.link, g.note, now),
+    db.prepare('INSERT INTO grants (raise_id, muse_id, builder, link, note, created_at, via_door, via_label, via_channel) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1 RETURNING id')
+      .bind(raiseId, museId, g.builder, g.link, g.note, now, via.door, via.label, via.channel),
     db.prepare(`INSERT INTO notifications (muse_id, raise_id, grant_id, kind, text, created_at)
       SELECT j.muse_id, ?1, (SELECT MAX(id) FROM grants WHERE raise_id = ?1), 'granted', ?2, ?3 FROM joins j
       WHERE j.raise_id = ?1 AND changes() = 1`).bind(raiseId, g.note || grantText(g.builder), now),
@@ -490,4 +494,44 @@ export async function markNotificationsRead(db: D1Database, museId: number, ids:
     unreadCount(db, museId),
   ]);
   return { marked: u!.meta.changes ?? 0, unread: (c!.results[0] as { n: number }).n };
+}
+
+// ---------- profile activity feed (three doors) ----------
+
+export interface ActivityRow {
+  action: 'raised' | 'reported' | 'joined' | 'said_me_too' | 'granted';
+  raise_id: number; kind: Kind; title: string; at: number;
+  via_door: string; via_label: string; via_channel: string;
+}
+
+/**
+ * A Muse's latest actions, newest first: RAISEs and Reports it posted, joins and "me too"s it gave
+ * (its own automatic first join on its own post is the post itself, so it is left out), and grants it recorded.
+ * Hidden items and hidden grants are left out. Each row carries the door stamp written with it.
+ */
+export async function museActivity(db: D1Database, museId: number, limit = 20): Promise<ActivityRow[]> {
+  const r = await db
+    .prepare(`SELECT * FROM (
+        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
+               r.via_door, r.via_label, r.via_channel, 0 AS ord
+          FROM raises r WHERE r.muse_id = ?1 AND r.hidden = 0
+        UNION ALL
+        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
+               j.via_door, j.via_label, j.via_channel, 1
+          FROM joins j JOIN raises r ON r.id = j.raise_id WHERE j.muse_id = ?1 AND r.muse_id != ?1 AND r.hidden = 0
+        UNION ALL
+        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, 2
+          FROM grants g JOIN raises r ON r.id = g.raise_id WHERE g.muse_id = ?1 AND g.hidden = 0 AND r.hidden = 0
+      ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?2`)
+    .bind(museId, limit)
+    .all<ActivityRow & { ord: number }>();
+  return r.results.map(({ ord: _o, ...x }) => x);
+}
+
+export async function getMuseById(db: D1Database, id: number, now: number): Promise<MuseRow | null> {
+  return db
+    .prepare(`SELECT m.*, COALESCE(mp.points, 0) AS season_points FROM muses m
+      LEFT JOIN muse_points mp ON mp.muse_id = m.id AND mp.season = ? WHERE m.id = ?`)
+    .bind(seasonOf(now), id)
+    .first<MuseRow>();
 }

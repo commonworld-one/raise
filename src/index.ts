@@ -4,13 +4,26 @@ import type { Ctx, Env, Kind } from './types';
 import { getJoiners, getMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
 import { API_PREFIX, cached, handleApi } from './api';
 import { handleMcp, tools } from './mcp';
-import { pageJson, museJson, raiseJson, verificationJson } from './serialize';
+import { activityItem, activityJson, pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
 import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
 import { characterMuse } from './characters';
 import { applyLive, cardWeek, isLive } from './live';
 import { demoPage } from './stage';
+import { handleOAuth, isOAuthPath } from './oauth';
+import { tapPage, tapSubmit } from './taps';
+import { museActivity } from './data';
+import { ConfigError } from './secrets';
+
+/** CORS preflight for the MCP endpoint (browser-based MCP clients send it before POST with Authorization). */
+export const MCP_PREFLIGHT = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+  'access-control-allow-headers': 'Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version',
+  'access-control-expose-headers': 'WWW-Authenticate, Mcp-Session-Id, Retry-After',
+  'access-control-max-age': '86400',
+};
 
 const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
@@ -31,7 +44,14 @@ export default {
       const hit = await cache.match(req);
       if (hit) return hit;
     }
-    const res = await route(req, env, u, ip);
+    let res: Response;
+    try {
+      res = await route(req, env, u, ip);
+    } catch (e) {
+      // Fail closed without RAISE_TOKEN_PEPPER: nothing is issued or accepted (src/secrets.ts).
+      if (!(e instanceof ConfigError)) throw e;
+      res = json({ error: e.code, message: e.message }, { status: 500, headers: { 'cache-control': 'no-store' } });
+    }
     if (cacheable && cache && res.status === 200 && (res.headers.get('cache-control') || '').includes('public'))
       ec.waitUntil(cache.put(req, res.clone()));
     return res;
@@ -61,10 +81,21 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (demo && isMachinePath(path)) return demoNoApi(ctx, req, path);
 
   if (path === API_PREFIX || path.startsWith(API_PREFIX + '/')) return handleApi(ctx, req, path.slice(API_PREFIX.length), u);
-  if (path === '/mcp') {
+  // Door 3: OAuth 2.1 discovery, registration, the Allow page, token and revoke (product only; the demo 404s them above).
+  if (isOAuthPath(path)) return handleOAuth(ctx, req, path);
+  if (path === '/mcp' || path === '/mcp/me') {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: MCP_PREFLIGHT });
     if (req.method === 'GET' && (req.headers.get('accept') || '').includes('text/html'))
       return html(V.layout(ctx, { title: 'RAISE over MCP', path: '/mcp', body: V.mcpPage(ctx, tools(ctx.demo).map((t) => t.name)) }));
-    return handleMcp(ctx, req);
+    return handleMcp(ctx, req, path);
+  }
+  // Door 2: one-tap links (product only). GET shows the exact text, POST is the tap.
+  const tap = /^\/t\/([^/]{1,80})$/.exec(path);
+  if (tap) {
+    if (ctx.demo) return notFound(ctx, 'html');
+    if (req.method === 'POST') return tapSubmit(ctx, req, tap[1]!);
+    if (req.method === 'GET' || req.method === 'HEAD') return tapPage(ctx, req, tap[1]!);
+    return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, POST' } });
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method Not Allowed', { status: 405 });
 
@@ -156,9 +187,11 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (n > 1 && !items.items.length) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
     if (m[3] === '.json') {
       const next = items.hasMore ? `${ctx.origin}${ctx.base}/m/${muse.slug}/page/${n + 1}.json` : null;
-      return json({ ...museJson(ctx, muse), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), next) });
+      return json({ ...museJson(ctx, muse), ...(await activityJson(ctx, muse)), items: pageJson(ctx, items, (x) => raiseJson(ctx, x), next) });
     }
-    return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, { ...items, items: applyLive(ctx, items.items, ctx.now) })));
+    // Product only: the activity feed with the door each action came through. The demo profile is unchanged.
+    const activity = !ctx.demo && muse.id > 0 && n === 1 ? (await museActivity(ctx.db, muse.id)).map((a) => activityItem(ctx, a)) : [];
+    return html(lay(muse.name, '/muses', V.profile(ctx, muse, u, { ...items, items: applyLive(ctx, items.items, ctx.now) }, activity)));
   }
 
   m = /^\/r\/(\d{1,9})(\.json|\.md)?$/.exec(path);
@@ -202,7 +235,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
 
 /** JSON API, MCP and the .json/.md twins of the pages: machine paths the demo host does not serve. */
 export function isMachinePath(path: string): boolean {
-  return path === API_PREFIX || path.startsWith(API_PREFIX + '/') || path === '/mcp' || path.startsWith('/mcp/') || /\.(json|md)$/.test(path);
+  return path === API_PREFIX || path.startsWith(API_PREFIX + '/') || path === '/mcp' || path.startsWith('/mcp/') || /\.(json|md)$/.test(path)
+    || path.startsWith('/oauth/') || path.startsWith('/.well-known/oauth-');
 }
 
 /** Demo host, machine path: 404 with a short pointer to the product, which has the API and MCP. */

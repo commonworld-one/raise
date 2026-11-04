@@ -11,6 +11,8 @@ export interface Env {
   /** Hackathon demo host. Requests to this hostname use DEMO_DB; every other hostname uses DB. */
   DEMO_SITE_URL: string;
   REPO_URL: string;
+  /** Secret (wrangler secret put RAISE_TOKEN_PEPPER), 32+ characters: the HMAC pepper for stored secrets (src/secrets.ts). */
+  RAISE_TOKEN_PEPPER?: string;
   /** Optional: coarse per-IP read limit. Not configured by default. */
   READ_LIMITER?: RateLimiter;
 }
