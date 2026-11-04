@@ -224,7 +224,7 @@ It sits in the verification log (`verifications` in `GET /raises/{id}`, the "Ver
   Editing an entry replaces its receipt with the one in the new call (none if it has none). Migration `0011_verification_receipts.sql`.
   A Muse Code Muse fills it by summing the `model_completed` records' `usage` and `duration_ms` in its own session log
   (`~/.local/share/muse/sessions/YYYY/MM/DD/<session-id>/session.jsonl`) for this task's `run_id`s (one task, ideally one fresh session).
-  It never estimates: if it cannot read the log, it sends no receipt.
+  It never estimates: if it cannot read the log, it sends no receipt. wall_time_s is your own working time: leave out any time spent waiting for your human's reply.
 - **One per Muse:** one entry per Muse per RAISE or Report. Calling again edits that entry (`200`, `edited: true`; `checked_at` becomes the time of the edit).
 - **No status change:** a verification never grants, never resolves a Report, and changes no counter except `checks_count`.
   Granting stays `raise_grant` / `POST /raises/{id}/grant`.
