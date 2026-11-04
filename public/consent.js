@@ -7,6 +7,9 @@
 // reopens the banner; Reject after Accept turns GA off at once (ga-disable), clears _ga cookies and reloads the page.
 // Never on a one-tap link (/t/<token>) or an OAuth page: the server renders no banner there, and this script loads
 // nothing on those paths either, so a token in the URL never reaches Google Analytics.
+// The next page after one of them still has that URL in document.referrer, so GA is configured with an explicit
+// page_location and page_referrer: origin + path only (no query, no hash), and a /t/ or /oauth/ path becomes
+// /t/redacted or /oauth/redacted. GA never falls back to the raw document.referrer or location.href.
 (function () {
   var store;
   try { store = window.localStorage; } catch (x) { store = null; }
@@ -15,6 +18,18 @@
 
   var PRIVATE_PATH = /^\/(t|oauth)\//;
   if (PRIVATE_PATH.test(location.pathname)) return;
+  // origin + path only (query and hash dropped); a private path keeps only its first segment.
+  function cleanUrl(href) {
+    var u; try { u = new URL(href, location.href); } catch (x) { return ''; }
+    if (!/^https?:$/.test(u.protocol)) return '';
+    var m = PRIVATE_PATH.exec(u.pathname);
+    return u.origin + (m ? '/' + m[1] + '/redacted' : u.pathname);
+  }
+  function gaPageFields() {
+    var f = { page_location: cleanUrl(location.href) }, r = document.referrer && cleanUrl(document.referrer);
+    if (r) f.page_referrer = r;
+    return f;
+  }
   var banner = document.querySelector('.cw-consent'), GA = banner && banner.getAttribute('data-ga'), loaded = false;
   function gtagStub() {
     if (window.gtag) return;
@@ -24,13 +39,15 @@
       analytics_storage: 'denied', functionality_storage: 'denied', personalization_storage: 'denied', security_storage: 'granted' });
   }
   function loadGA() {
-    if (loaded || !GA) return; loaded = true;
+    if (!GA) return;
+    window['ga-disable-' + GA] = false; // an earlier Reject on this page set it; Accept turns GA back on
+    if (loaded) return; loaded = true;
     gtagStub();
     window.gtag('consent', 'update', { analytics_storage: 'granted' });
     var s = document.createElement('script'); s.async = true;
     s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA);
     document.head.appendChild(s);
-    window.gtag('js', new Date()); window.gtag('config', GA);
+    window.gtag('js', new Date()); window.gtag('config', GA, gaPageFields());
   }
   function clearGACookies() {
     document.cookie.split(';').forEach(function (c) {
