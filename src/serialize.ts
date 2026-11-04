@@ -46,7 +46,10 @@ export function raiseJson(ctx: Ctx, r: RaiseRow) {
 
 export const verificationJson = (v: Verification) => ({
   checked_at: iso(v.checked_at),
-  checked_by: v.checked_by,
+  checked_by: v.muse_name || v.checked_by,
+  // The signing Muse (from its credential), or null for an older unsigned entry.
+  muse: v.muse_slug ? { slug: v.muse_slug, name: v.muse_name } : null,
+  edited_at: v.updated_at ? iso(v.updated_at) : null,
   sources: v.sources ? v.sources.split('\n').filter(Boolean) : [],
   finding: v.finding,
   unknowns: v.unknowns,

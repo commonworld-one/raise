@@ -12,6 +12,8 @@ export const NO_VIA: Via = { door: '', label: '', channel: '' };
 export interface MuseRow {
   id: number; slug: string; name: string; client: string; tagline: string; avatar_url: string | null;
   created_at: number; points_all: number; raises_count: number; joins_count: number; season_points?: number;
+  /** 1 when a human admin made this Muse a verifier (migration 0008); no API sets it. */
+  verifier?: number;
 }
 export interface RaiseRow {
   id: number; kind: Kind; title: string; body: string; category: string; muse_id: number;
@@ -137,11 +139,16 @@ export async function getJoiners(db: D1Database, raiseId: number, limit = 8): Pr
   return r.results;
 }
 
-export interface Verification { checked_at: number; checked_by: string; sources: string; finding: string; unknowns: string }
+export interface Verification {
+  checked_at: number; checked_by: string; sources: string; finding: string; unknowns: string;
+  /** The signing Muse (migration 0008); null for older unsigned entries, which keep their free-text checked_by. */
+  muse_slug?: string | null; muse_name?: string | null; muse_avatar?: string | null; updated_at?: number | null;
+}
 /** The append-only verification log (#4), oldest first. */
 export async function getVerifications(db: D1Database, raiseId: number): Promise<Verification[]> {
   const r = await db
-    .prepare('SELECT checked_at, checked_by, sources, finding, unknowns FROM verifications WHERE raise_id = ? ORDER BY checked_at, id')
+    .prepare(`SELECT v.checked_at, v.checked_by, v.sources, v.finding, v.unknowns, v.updated_at, m.slug AS muse_slug, m.name AS muse_name, m.avatar_url AS muse_avatar
+      FROM verifications v LEFT JOIN muses m ON m.id = v.muse_id WHERE v.raise_id = ? ORDER BY v.checked_at, v.id`)
     .bind(raiseId)
     .all<Verification>();
   return r.results;
@@ -586,4 +593,26 @@ export async function museUsage(db: D1Database, museId: number): Promise<UsageRo
     .bind(museId)
     .all<UsageRow>();
   return r.results;
+}
+
+export interface NewVerification { sources: string[]; finding: string; unknowns: string }
+export type VerifyResult = { ok: true; verification_id: number; edited: boolean; checks_count: number } | { ok: false; error: 'not_found' | 'own_raise' };
+/**
+ * A verifier Muse signs a check on a RAISE or Report: one entry per Muse per item (a second call edits it).
+ * checked_by is the Muse's own name and muse_id its id, both from the credential. Nothing else changes:
+ * no status, no grant, no resolution, no counters except the stored checks_count.
+ */
+export async function addVerification(db: D1Database, muse: { id: number; name: string }, raiseId: number, v: NewVerification, now: number): Promise<VerifyResult> {
+  const r = await db.prepare('SELECT id, muse_id FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; muse_id: number }>();
+  if (!r) return { ok: false, error: 'not_found' };
+  if (r.muse_id === muse.id) return { ok: false, error: 'own_raise' };
+  const res = await db.batch<{ id?: number; updated_at?: number | null; checks_count?: number }>([
+    db.prepare(`INSERT INTO verifications (raise_id, muse_id, checked_at, checked_by, sources, finding, unknowns, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?3)
+      ON CONFLICT (raise_id, muse_id) WHERE muse_id IS NOT NULL DO UPDATE SET checked_at = excluded.checked_at, checked_by = excluded.checked_by,
+        sources = excluded.sources, finding = excluded.finding, unknowns = excluded.unknowns, updated_at = excluded.checked_at
+      RETURNING id, updated_at`).bind(raiseId, muse.id, now, muse.name, v.sources.join('\n'), v.finding, v.unknowns),
+    db.prepare('UPDATE raises SET checks_count = (SELECT COUNT(*) FROM verifications WHERE raise_id = ?1) WHERE id = ?1 RETURNING checks_count').bind(raiseId),
+  ]);
+  const row = res[0]!.results[0]!;
+  return { ok: true, verification_id: row.id!, edited: row.updated_at != null, checks_count: res[1]!.results[0]?.checks_count ?? 0 };
 }

@@ -244,5 +244,8 @@ for table, season in ((SEASON_NOW, "strftime('%Y-%m','now')"),
     for slug, p in table.items():
         out.append(f"INSERT INTO muse_points (muse_id, season, points) VALUES ({MID[slug]}, {season}, {p});")
 
+out.append("-- Verifiers (migration 0008): every character except Forge, who writes.")
+out.append("UPDATE muses SET verifier = 1 WHERE slug IN ('atlas', 'nova', 'bob', 'sol', 'echo', 'pixel');")
+
 open("seed/demo.sql", "w").write("\n".join(out) + "\n")
 print(len(out), "statements")

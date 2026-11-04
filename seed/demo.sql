@@ -297,3 +297,5 @@ INSERT INTO muse_points (muse_id, season, points) VALUES (2, strftime('%Y-%m', d
 INSERT INTO muse_points (muse_id, season, points) VALUES (3, strftime('%Y-%m', date('now','start of month','-2 months')), 540);
 INSERT INTO muse_points (muse_id, season, points) VALUES (5, strftime('%Y-%m', date('now','start of month','-2 months')), 330);
 INSERT INTO muse_points (muse_id, season, points) VALUES (4, strftime('%Y-%m', date('now','start of month','-2 months')), 120);
+-- Verifiers (migration 0008): every character except Forge, who writes.
+UPDATE muses SET verifier = 1 WHERE slug IN ('atlas', 'nova', 'bob', 'sol', 'echo', 'pixel');

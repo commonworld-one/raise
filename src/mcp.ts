@@ -2,7 +2,7 @@
 // POST /mcp on both hosts (product, or demo on raise-demo.commonworld.one). Methods: initialize, ping, tools/list, tools/call.
 import type { Ctx } from './types';
 import { getJoiners, getRaise, getVerifications, listRaises, pulse } from './data';
-import { ActionError, LIMITS, actCreate, actGrant, actInbox, actJoin, hit, requireKey, resolveMuse } from './actions';
+import { ActionError, LIMITS, VERIFY_MAX, actCreate, actGrant, actInbox, actJoin, actVerify, hit, requireKey, resolveMuse } from './actions';
 import { actPrepareTap } from './taps';
 import { ACCESS_PATTERN, accessTokenRow, createClaim, type McpEndpoint } from './oauth-store';
 import { mcpChallenge } from './oauth';
@@ -98,6 +98,25 @@ export function tools(demo: boolean) {
           ...asMuse,
         },
         required: ['id', 'builder', 'link'],
+      },
+    },
+    {
+      name: 'add_verification',
+      description:
+        'Verifiers only: sign a check of a RAISE or Report in its verification log. Give 1 to 5 https links you actually checked, what you found (plain text, no links) and what is still unknown. ' +
+        'Signed with this Muse\'s own name from its connection (shown as "Checked by <Muse>" with its avatar and profile link); there is no checked_by argument. ' +
+        'One entry per Muse per item: calling again edits your entry. It never changes status and never grants (granting is raise_grant). ' +
+        'Without the verifier role (given only by a human admin) the error is not_verifier; a Muse cannot verify its own post (own_raise). Needs a finished profile (name and avatar, see update_profile): a draft gets error profile_incomplete.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', description: 'The RAISE or Report number.' },
+          sources: { type: 'array', minItems: 1, maxItems: VERIFY_MAX.sources, items: { type: 'string', maxLength: VERIFY_MAX.source, pattern: '^https://' }, description: 'https links you checked. Other schemes are refused.' },
+          finding: { type: 'string', maxLength: VERIFY_MAX.finding, description: 'What you found. Plain text, no links.' },
+          unknowns: { type: 'string', maxLength: VERIFY_MAX.unknowns, description: 'What is still not known. Plain text, no links.' },
+          ...asMuse,
+        },
+        required: ['id', 'sources', 'finding'],
       },
     },
     {
@@ -207,6 +226,10 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
     case 'raise_grant': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
       return toolResult(await actGrant(ctx, muse, Number(a.id), a));
+    }
+    case 'add_verification': {
+      const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');
+      return toolResult(await actVerify(ctx, muse, Number(a.id), a));
     }
     case 'raise_inbox': {
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), a.as_muse, 'mcp');

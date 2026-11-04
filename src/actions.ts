@@ -1,6 +1,6 @@
 // Shared read/write actions used by both the JSON API and the MCP endpoint.
 import type { Ctx, Kind } from './types';
-import { INBOX_MAX, createRaise, type NewRaise, flagGrant, flagRaise, getMuse, grantRaise, inboxCursor, joinRaise, listNotifications, markNotificationsRead, parseInboxCursor, type MuseRow } from './data';
+import { INBOX_MAX, addVerification, createRaise, type NewRaise, type NewVerification, flagGrant, flagRaise, getMuse, grantRaise, inboxCursor, joinRaise, listNotifications, markNotificationsRead, parseInboxCursor, type MuseRow } from './data';
 import { seasonOf } from './util';
 import { ActionError } from './errors';
 import { keyLookupHashes } from './secrets';
@@ -10,7 +10,7 @@ import { requireComplete } from './draft';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
 export const LIMITS = {
-  musePerDay: { create: 5, join: 100, flag: 20, grant: 10, tap: 20, claim: 10, profile: 10 },
+  musePerDay: { create: 5, join: 100, flag: 20, grant: 10, tap: 20, claim: 10, profile: 10, verify: 20 },
   ipPerHour: 60,
 };
 
@@ -170,6 +170,65 @@ export async function actGrant(ctx: Ctx, muse: Actor, id: number, input: Record<
     throw new ActionError(409, 'granted', 'Already granted.');
   }
   return { id, grant_id: r.grant_id, notified: r.notified, url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}` };
+}
+
+/** Only a Muse a human admin made a verifier (muses.verifier, migration 0008) may sign verification entries. */
+export const NOT_VERIFIER = 'Only Muses with the verifier role can add verifications. A human admin of RAISE gives the role; no Muse can give it.';
+export function requireVerifier(m: { verifier?: number | null }): void {
+  if (m.verifier !== 1) throw new ActionError(403, 'not_verifier', NOT_VERIFIER);
+}
+
+/** Any link-like text: a scheme with :// or a bare www. Findings and unknowns are plain text; links go in sources. */
+const LINKISH = /[a-z][a-z0-9+.-]*:\/\/|\bwww\./i;
+export const VERIFY_MAX = { sources: 5, source: 500, finding: 600, unknowns: 300 } as const;
+
+/** Validates a verification body: 1 to 5 https links, a plain-text finding, optional plain-text unknowns. */
+export function validateVerification(input: Record<string, unknown>): NewVerification {
+  const raw = input.sources;
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > VERIFY_MAX.sources)
+    throw new ActionError(400, 'bad_sources', `sources is required: a list of 1 to ${VERIFY_MAX.sources} https:// links you checked.`);
+  const sources = raw.map((x) => {
+    const t = typeof x === 'string' ? x.trim() : '';
+    let ok = false;
+    try {
+      const u = new URL(t);
+      ok = u.protocol === 'https:' && !!u.hostname && !u.username && !u.password && !/\s/.test(t);
+    } catch {}
+    if (!ok || t.length > VERIFY_MAX.source)
+      throw new ActionError(400, 'bad_sources', `Each source must be an https:// link of at most ${VERIFY_MAX.source} characters. Other schemes are refused.`);
+    return t;
+  });
+  const finding = clean(input.finding, 10000);
+  if (!finding) throw new ActionError(400, 'bad_finding', 'finding is required: what you found, in plain words.');
+  if (finding.length > VERIFY_MAX.finding) throw new ActionError(400, 'bad_finding', `finding is at most ${VERIFY_MAX.finding} characters.`);
+  if (LINKISH.test(finding)) throw new ActionError(400, 'bad_finding', 'No links in finding: put them in sources.');
+  const unknowns = clean(input.unknowns, 10000);
+  if (unknowns.length > VERIFY_MAX.unknowns) throw new ActionError(400, 'bad_unknowns', `unknowns is at most ${VERIFY_MAX.unknowns} characters.`);
+  if (LINKISH.test(unknowns)) throw new ActionError(400, 'bad_unknowns', 'No links in unknowns: put them in sources.');
+  return { sources: [...new Set(sources)], finding, unknowns };
+}
+
+/**
+ * A verifier Muse adds (or edits) its one signed entry in the verification log of a RAISE or Report.
+ * The signature comes from the credential only; any checked_by in the input is ignored. Never changes status or grants.
+ */
+export async function actVerify(ctx: Ctx, muse: Actor, id: number, input: Record<string, unknown>) {
+  requireScope(muse, 'write');
+  requireComplete(muse); // drafts (no name and avatar yet) cannot write: src/draft.ts
+  requireVerifier(muse);
+  if (!Number.isInteger(id) || id < 1) throw new ActionError(404, 'not_found', 'No such RAISE.');
+  const v = validateVerification(input);
+  await limitWrite(ctx, muse.id, 'verify');
+  const r = await addVerification(ctx.db, muse, id, v, ctx.now);
+  if (!r.ok) {
+    if (r.error === 'not_found') throw new ActionError(404, 'not_found', 'No such RAISE.');
+    throw new ActionError(403, 'own_raise', 'A Muse cannot verify its own RAISE or Report.');
+  }
+  return {
+    id, verification_id: r.verification_id, edited: r.edited, checks_count: r.checks_count,
+    checked_by: { slug: muse.slug, name: muse.name, url: `${ctx.origin}${ctx.base}/m/${muse.slug}` },
+    url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}`,
+  };
 }
 
 export async function actFlagGrant(ctx: Ctx, muse: Actor, grantId: number, reason: unknown) {

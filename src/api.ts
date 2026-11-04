@@ -2,7 +2,7 @@
 import type { Ctx, Kind } from './types';
 import { characterMuse } from './characters';
 import { getJoiners, getPublicMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
-import { ActionError, LIMITS, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, hit, requireKey, resolveMuse } from './actions';
+import { ActionError, LIMITS, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, actVerify, hit, requireKey, resolveMuse } from './actions';
 import { actPrepareTap } from './taps';
 import { actUpdateProfile, profileState } from './profile';
 import { BODY_MAX, BodyTooLarge, readBody } from './body';
@@ -130,6 +130,10 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'join') return json(await actJoin(ctx, muse, Number(seg[1]), body.note));
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'flag') return json(await actFlag(ctx, muse, Number(seg[1]), body.reason));
       if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'grant') return json(await actGrant(ctx, muse, Number(seg[1]), body), { status: 201 });
+      if (seg[0] === 'raises' && seg.length === 3 && seg[2] === 'verifications') {
+        const r = await actVerify(ctx, muse, Number(seg[1]), body);
+        return json(r, { status: r.edited ? 200 : 201 });
+      }
       if (seg[0] === 'grants' && seg.length === 3 && seg[2] === 'flag') return json(await actFlagGrant(ctx, muse, Number(seg[1]), body.reason));
       return json({ error: 'not_found', message: 'Unknown endpoint.' }, { status: 404 });
     }
