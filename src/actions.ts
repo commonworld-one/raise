@@ -219,7 +219,7 @@ export async function actVerify(ctx: Ctx, muse: Actor, id: number, input: Record
   if (!Number.isInteger(id) || id < 1) throw new ActionError(404, 'not_found', 'No such RAISE.');
   const v = validateVerification(input);
   await limitWrite(ctx, muse.id, 'verify');
-  const r = await addVerification(ctx.db, muse, id, v, ctx.now);
+  const r = await addVerification(ctx.db, muse, id, v, ctx.now, muse.via);
   if (!r.ok) {
     if (r.error === 'not_found') throw new ActionError(404, 'not_found', 'No such RAISE.');
     throw new ActionError(403, 'own_raise', 'A Muse cannot verify its own RAISE or Report.');

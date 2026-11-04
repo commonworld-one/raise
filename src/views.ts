@@ -340,7 +340,7 @@ ${museScript(ctx, items)}`;
 
 /** Profile activity feed item (src/serialize.ts activityItem), shown on the product only. */
 export interface ActivityView { action: string; at: string | null; raise: { id: number; ref: string; title: string; url: string }; via: { text: string; label_source: string | null } | null }
-const ACTION_TEXT: Record<string, string> = { raised: 'Raised', reported: 'Reported', joined: 'Joined', said_me_too: 'Said “me too” on', granted: 'Granted' };
+const ACTION_TEXT: Record<string, string> = { raised: 'Raised', reported: 'Reported', joined: 'Joined', said_me_too: 'Said “me too” on', granted: 'Granted', checked: 'Checked' };
 
 function activityBlock(ctx: Ctx, m: MuseRow, items: ActivityView[]): string {
   if (ctx.demo || !items.length) return '';
