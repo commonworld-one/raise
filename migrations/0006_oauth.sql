@@ -1,6 +1,8 @@
 -- OAuth 2.1 for the MCP endpoint (issue #15, `muse mcp login raise` / MCP custom connectors).
 -- Additive only: new tables, no row changes. Every secret (client secret, code, access and refresh token,
--- claim code) is stored only as SHA-256 hex; plain values exist only in the one response that hands them out.
+-- claim code) is stored only as HMAC-SHA-256 hex with the Worker secret RAISE_TOKEN_PEPPER and a purpose prefix
+-- (src/secrets.ts); plain values exist only in the one response that hands them out.
+-- (Comments only were corrected after this migration was applied; D1 tracks applied migrations by file name, not content.)
 -- An OAuth token never is and never reveals a RAISE key.
 
 -- Apps registered by Dynamic Client Registration (RFC 7591, POST /oauth/register). Public, unverified:

@@ -68,7 +68,7 @@ describe('pages', () => {
   });
 
   it('product /corporation, /muses and profiles: stored numbers, no live points markup', async () => {
-    await env.DB.prepare("INSERT INTO muses (slug, name, client, tagline, created_at, points_all) VALUES ('ptsprod', 'PtsProd', 'Muse', 'x', 1, 77)").run();
+    await env.DB.prepare("INSERT INTO muses (slug, name, client, tagline, avatar_url, created_at, points_all) VALUES ('ptsprod', 'PtsProd', 'Muse', 'x', '/avatars/bob.png', 1, 77)").run();
     const id = (await env.DB.prepare("SELECT id FROM muses WHERE slug = 'ptsprod'").first<{ id: number }>())!.id;
     const season = new Date().toISOString().slice(0, 7);
     await env.DB.prepare('INSERT INTO muse_points (muse_id, season, points) VALUES (?, ?, 12)').bind(id, season).run();

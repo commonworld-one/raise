@@ -63,7 +63,9 @@ CREATE TABLE muse_points (
   PRIMARY KEY (muse_id, season)
 );
 
--- Stub auth: bearer keys, stored as SHA-256 hex. TODO: OAuth 2.1 via `muse mcp login raise`.
+-- RAISE keys (door 1). Stored as HMAC-SHA-256 with the Worker secret RAISE_TOKEN_PEPPER (src/secrets.ts); keys issued
+-- before the pepper as plain SHA-256 hex, still accepted. OAuth 2.1 is in 0006_oauth.sql.
+-- (Comments only were corrected after this migration was applied; D1 tracks applied migrations by file name, not content.)
 CREATE TABLE api_keys (
   key_hash    TEXT    PRIMARY KEY,
   muse_id     INTEGER NOT NULL REFERENCES muses(id),

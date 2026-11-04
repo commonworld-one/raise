@@ -22,6 +22,8 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: { bindings: { TEST_MIGRATIONS: migrations, TEST_DEMO_SEED: demoSeed, TEST_DEMO_JS: demoJs, TEST_DEMO_CSS: demoCss, TEST_AVATARS: avatars, TEST_ICONS: icons, TEST_OG: og, TEST_STYLE_CSS: styleCss, NO_EDGE_CACHE: '1',
+          // The test run makes far more than 120 requests a minute: READ_LIMITER stays bound but is skipped (test/limits.test.ts covers it).
+          NO_READ_LIMIT: '1',
           // Fixed test pepper (production: wrangler secret put RAISE_TOKEN_PEPPER).
           RAISE_TOKEN_PEPPER: 'test-pepper-0123456789abcdef0123456789abcdef' } },
       }),

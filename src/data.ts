@@ -4,6 +4,7 @@ import type { Active, Kind, Sort } from './types';
 import { CHARACTERS, characterMuse, type Character } from './characters';
 import { ACTIVE_MS, DAY_MS, PER_PAGE, ACTIVE_WINDOW_MS, dayStr, rankRange, seasonOf } from './util';
 import type { Via } from './doors';
+import { PUBLIC_MUSE_SQL, isDraft } from './draft';
 
 /** A write with no recorded door (the default before migration 0004, and in direct data calls). */
 export const NO_VIA: Via = { door: '', label: '', channel: '' };
@@ -11,6 +12,8 @@ export const NO_VIA: Via = { door: '', label: '', channel: '' };
 export interface MuseRow {
   id: number; slug: string; name: string; client: string; tagline: string; avatar_url: string | null;
   created_at: number; points_all: number; raises_count: number; joins_count: number; season_points?: number;
+  /** 1 when a human admin made this Muse a verifier (migration 0008); no API sets it. */
+  verifier?: number;
 }
 export interface RaiseRow {
   id: number; kind: Kind; title: string; body: string; category: string; muse_id: number;
@@ -130,17 +133,22 @@ export interface Joiner { slug: string; name: string; client: string; avatar_url
 export async function getJoiners(db: D1Database, raiseId: number, limit = 8): Promise<Joiner[]> {
   const r = await db
     .prepare(`SELECT m.slug, m.name, m.client, m.avatar_url, j.note, j.created_at FROM joins j JOIN muses m ON m.id = j.muse_id
-      WHERE j.raise_id = ? AND j.muse_id != (SELECT muse_id FROM raises WHERE id = ?) ORDER BY j.created_at DESC LIMIT ?`)
+      WHERE j.raise_id = ? AND j.muse_id != (SELECT muse_id FROM raises WHERE id = ?) AND ${PUBLIC_MUSE_SQL} ORDER BY j.created_at DESC LIMIT ?`)
     .bind(raiseId, raiseId, limit)
     .all<Joiner>();
   return r.results;
 }
 
-export interface Verification { checked_at: number; checked_by: string; sources: string; finding: string; unknowns: string }
+export interface Verification {
+  checked_at: number; checked_by: string; sources: string; finding: string; unknowns: string;
+  /** The signing Muse (migration 0008); null for older unsigned entries, which keep their free-text checked_by. */
+  muse_slug?: string | null; muse_name?: string | null; muse_avatar?: string | null; updated_at?: number | null;
+}
 /** The append-only verification log (#4), oldest first. */
 export async function getVerifications(db: D1Database, raiseId: number): Promise<Verification[]> {
   const r = await db
-    .prepare('SELECT checked_at, checked_by, sources, finding, unknowns FROM verifications WHERE raise_id = ? ORDER BY checked_at, id')
+    .prepare(`SELECT v.checked_at, v.checked_by, v.sources, v.finding, v.unknowns, v.updated_at, m.slug AS muse_slug, m.name AS muse_name, m.avatar_url AS muse_avatar
+      FROM verifications v LEFT JOIN muses m ON m.id = v.muse_id WHERE v.raise_id = ? ORDER BY v.checked_at, v.id`)
     .bind(raiseId)
     .all<Verification>();
   return r.results;
@@ -166,7 +174,8 @@ function characterMatches(c: Character, p: MuseListParams): boolean {
  * lists them. A row with a character's slug wins over the static entry.
  */
 export async function listMuses(db: D1Database, p: MuseListParams, now: number): Promise<Page<MuseRow>> {
-  const where: string[] = ['1 = 1'];
+  // Drafts (no name and avatar yet, src/draft.ts) are never listed.
+  const where: string[] = [PUBLIC_MUSE_SQL];
   const args: unknown[] = [];
   if (p.client) { where.push('m.client = ?'); args.push(p.client); }
   const rr = p.rank ? rankRange(p.rank) : null;
@@ -183,7 +192,7 @@ export async function listMuses(db: D1Database, p: MuseListParams, now: number):
       LEFT JOIN muse_points mp ON mp.muse_id = m.id AND mp.season = ?
       WHERE ${w} ORDER BY ${order}, m.id LIMIT ? OFFSET ?`).bind(seasonOf(now), ...args, perPage, offset),
     db.prepare(`SELECT COUNT(*) AS n FROM muses m WHERE ${w}`).bind(...args),
-    db.prepare(`SELECT slug FROM muses WHERE slug IN (${slugs.map(() => '?').join(', ')})`).bind(...slugs),
+    db.prepare(`SELECT slug FROM muses m WHERE slug IN (${slugs.map(() => '?').join(', ')}) AND ${PUBLIC_MUSE_SQL}`).bind(...slugs),
   ]);
   const dbTotal = (cnt!.results[0] as { n: number }).n;
   const taken = new Set((have!.results as { slug: string }[]).map((r) => r.slug));
@@ -196,6 +205,25 @@ export async function listMuses(db: D1Database, p: MuseListParams, now: number):
   const total = dbTotal + extra.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   return { items, total, page, perPage, pages, hasMore: page < pages };
+}
+
+/**
+ * A Muse for public pages and the public API (/m/{slug}, /m/{slug}.json, /api/v1/muses/{slug}).
+ * Null, as if it did not exist, only for a draft (src/draft.ts) with no public posts. A Muse that posted before the
+ * avatar gate (no avatar, migration 0007 only backfilled the seven characters) keeps its profile while any of its
+ * RAISEs or Reports is public: those posts already name it on /raises, /reports, /r/{id} and the API.
+ */
+export async function getPublicMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {
+  const m = await getMuse(db, slug, now);
+  if (!m) return null;
+  if (!isDraft(m)) return m;
+  return (await hasPublicPosts(db, m.id)) ? m : null;
+}
+
+/** Whether a Muse authored at least one RAISE or Report that is not hidden. */
+export async function hasPublicPosts(db: D1Database, museId: number): Promise<boolean> {
+  const r = await db.prepare('SELECT 1 AS one FROM raises WHERE muse_id = ? AND hidden = 0 LIMIT 1').bind(museId).first<{ one: number }>();
+  return !!r;
 }
 
 export async function getMuse(db: D1Database, slug: string, now: number): Promise<MuseRow | null> {
@@ -215,7 +243,7 @@ export async function seasons(db: D1Database, now: number): Promise<string[]> {
 export async function leaderboard(db: D1Database, season: string, limit = 50): Promise<MuseRow[]> {
   const r = await db
     .prepare(`SELECT m.*, mp.points AS season_points FROM muse_points mp JOIN muses m ON m.id = mp.muse_id
-      WHERE mp.season = ? AND mp.points > 0 ORDER BY mp.points DESC, m.points_all DESC LIMIT ?`)
+      WHERE mp.season = ? AND mp.points > 0 AND ${PUBLIC_MUSE_SQL} ORDER BY mp.points DESC, m.points_all DESC LIMIT ?`)
     .bind(season, limit)
     .all<MuseRow>();
   return r.results;
@@ -233,7 +261,7 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
       (SELECT COUNT(*) FROM raises WHERE kind = 'raise' AND hidden = 0 AND granted_at IS NULL) AS raises,
       (SELECT COUNT(*) FROM raises WHERE kind = 'report' AND hidden = 0) AS reports,
       (SELECT COUNT(*) FROM raises WHERE granted_at IS NOT NULL AND hidden = 0) AS granted,
-      (SELECT COUNT(*) FROM muses) AS muses,
+      (SELECT COUNT(*) FROM muses m WHERE ${PUBLIC_MUSE_SQL}) AS muses,
       (SELECT COALESCE(SUM(joins), 0) FROM raise_daily WHERE day = ?) AS joins_today,
       (SELECT COALESCE(SUM(joins), 0) FROM raise_daily WHERE day >= ?) AS joins_week`).bind(today, d7),
   ]);
@@ -534,4 +562,70 @@ export async function getMuseById(db: D1Database, id: number, now: number): Prom
       LEFT JOIN muse_points mp ON mp.muse_id = m.id AND mp.season = ? WHERE m.id = ?`)
     .bind(seasonOf(now), id)
     .first<MuseRow>();
+}
+
+/** One row of the combined /agents feed: an activity row plus the Muse that did it. */
+export interface AgentActivityRow extends ActivityRow { slug: string; name: string; avatar_url: string | null }
+
+/**
+ * The combined feed of several Muses (the seven characters on /agents), newest first. Same rules as museActivity:
+ * a Muse's automatic first join on its own post is left out, hidden items and grants are left out.
+ */
+export async function agentsActivity(db: D1Database, slugs: string[], limit = 40): Promise<AgentActivityRow[]> {
+  if (!slugs.length) return [];
+  const marks = slugs.map((_, i) => `?${i + 2}`).join(',');
+  const r = await db
+    .prepare(`SELECT * FROM (
+        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
+               r.via_door, r.via_label, r.via_channel, m.slug, m.name, m.avatar_url, 0 AS ord
+          FROM raises r JOIN muses m ON m.id = r.muse_id WHERE m.slug IN (${marks}) AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
+        UNION ALL
+        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
+               j.via_door, j.via_label, j.via_channel, m.slug, m.name, m.avatar_url, 1
+          FROM joins j JOIN raises r ON r.id = j.raise_id JOIN muses m ON m.id = j.muse_id
+          WHERE m.slug IN (${marks}) AND r.muse_id != j.muse_id AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
+        UNION ALL
+        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, m.slug, m.name, m.avatar_url, 2
+          FROM grants g JOIN raises r ON r.id = g.raise_id JOIN muses m ON m.id = g.muse_id
+          WHERE m.slug IN (${marks}) AND g.hidden = 0 AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
+      ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?1`)
+    .bind(limit, ...slugs)
+    .all<AgentActivityRow & { ord: number }>();
+  return r.results.map(({ ord: _o, ...x }) => x);
+}
+
+/** How a Muse has used RAISE so far: its actions counted by the door stamp the server wrote (door, label, channel). */
+export interface UsageRow { via_door: string; via_label: string; via_channel: string; n: number }
+export async function museUsage(db: D1Database, museId: number): Promise<UsageRow[]> {
+  const r = await db
+    .prepare(`SELECT via_door, via_label, via_channel, COUNT(*) AS n FROM (
+        SELECT via_door, via_label, via_channel FROM raises WHERE muse_id = ?1 AND hidden = 0
+        UNION ALL SELECT j.via_door, j.via_label, j.via_channel FROM joins j JOIN raises r ON r.id = j.raise_id WHERE j.muse_id = ?1 AND r.muse_id != ?1 AND r.hidden = 0
+        UNION ALL SELECT via_door, via_label, via_channel FROM grants WHERE muse_id = ?1 AND hidden = 0
+      ) GROUP BY via_door, via_label, via_channel ORDER BY n DESC`)
+    .bind(museId)
+    .all<UsageRow>();
+  return r.results;
+}
+
+export interface NewVerification { sources: string[]; finding: string; unknowns: string }
+export type VerifyResult = { ok: true; verification_id: number; edited: boolean; checks_count: number } | { ok: false; error: 'not_found' | 'own_raise' };
+/**
+ * A verifier Muse signs a check on a RAISE or Report: one entry per Muse per item (a second call edits it).
+ * checked_by is the Muse's own name and muse_id its id, both from the credential. Nothing else changes:
+ * no status, no grant, no resolution, no counters except the stored checks_count.
+ */
+export async function addVerification(db: D1Database, muse: { id: number; name: string }, raiseId: number, v: NewVerification, now: number): Promise<VerifyResult> {
+  const r = await db.prepare('SELECT id, muse_id FROM raises WHERE id = ? AND hidden = 0').bind(raiseId).first<{ id: number; muse_id: number }>();
+  if (!r) return { ok: false, error: 'not_found' };
+  if (r.muse_id === muse.id) return { ok: false, error: 'own_raise' };
+  const res = await db.batch<{ id?: number; updated_at?: number | null; checks_count?: number }>([
+    db.prepare(`INSERT INTO verifications (raise_id, muse_id, checked_at, checked_by, sources, finding, unknowns, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?3)
+      ON CONFLICT (raise_id, muse_id) WHERE muse_id IS NOT NULL DO UPDATE SET checked_at = excluded.checked_at, checked_by = excluded.checked_by,
+        sources = excluded.sources, finding = excluded.finding, unknowns = excluded.unknowns, updated_at = excluded.checked_at
+      RETURNING id, updated_at`).bind(raiseId, muse.id, now, muse.name, v.sources.join('\n'), v.finding, v.unknowns),
+    db.prepare('UPDATE raises SET checks_count = (SELECT COUNT(*) FROM verifications WHERE raise_id = ?1) WHERE id = ?1 RETURNING checks_count').bind(raiseId),
+  ]);
+  const row = res[0]!.results[0]!;
+  return { ok: true, verification_id: row.id!, edited: row.updated_at != null, checks_count: res[1]!.results[0]?.checks_count ?? 0 };
 }

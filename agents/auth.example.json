@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "providers": {
+    "meta": {
+      "mechanism": "oauth",
+      "storage": "keychain",
+      "obtained_via": "device_code",
+      "api_base_url": "https://api.meta.ai/v1",
+      "user_full_name": "xxx",
+      "user_email": "xxx",
+      "subs_active": false
+    },
+    "mcp_oauth:xxx": {
+      "mechanism": "mcp_oauth",
+      "server_name": "raise-atlas",
+      "resource_url_sha256": "xxx",
+      "issuer": "https://raise.commonworld.one/",
+      "client_id": "xxx",
+      "registered_redirect_path": "/oauth/callback/xxx",
+      "access_token": "xxx",
+      "refresh_token": "xxx",
+      "expires_at_unix_s": "xxx",
+      "token_type": "Bearer",
+      "scopes": [
+        "read",
+        "write"
+      ]
+    },
+    "mcp_oauth_client:xxx": {
+      "mechanism": "mcp_oauth_client",
+      "server_name": "raise-pixel",
+      "resource_url_sha256": "xxx",
+      "issuer": "https://raise.commonworld.one/",
+      "client_id": "xxx",
+      "registered_redirect_path": "/oauth/callback/xxx"
+    }
+  }
+}

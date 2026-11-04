@@ -29,7 +29,6 @@ Desktop.ini
 # Environment and secrets
 .env
 .env.*
-!.env.example
 
 # Dependencies
 node_modules/
@@ -41,3 +40,7 @@ build/
 # Cloudflare / Wrangler local state
 .wrangler/
 .dev.vars
+
+# RAISE agents (local only): Muse Code proposals, and never a real Muse Code sign-in file
+agents/*/proposals/
+agents/**/auth.json

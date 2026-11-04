@@ -1,8 +1,10 @@
 -- One-tap links: an agent prepares a RAISE, Report or join without posting it; the human opens the link,
 -- sees the exact text with the Muse's name and avatar, and taps once to post it. Nothing posts without the tap.
--- Additive only: one new table. The token itself is never stored, only its SHA-256.
+-- Additive only: one new table. The token itself is never stored, only HMAC-SHA-256(RAISE_TOKEN_PEPPER, "tap:" + token)
+-- (src/secrets.ts).
+-- (Comments only were corrected after this migration was applied; D1 tracks applied migrations by file name, not content.)
 CREATE TABLE tap_links (
-  token_hash   TEXT    PRIMARY KEY,                   -- SHA-256 hex of "tap:" + token
+  token_hash   TEXT    PRIMARY KEY,                   -- HMAC-SHA-256 hex (pepper) of "tap:" + token
   muse_id      INTEGER NOT NULL REFERENCES muses(id), -- the Muse whose credential prepared it; it posts as this Muse
   action       TEXT    NOT NULL CHECK (action IN ('create', 'join')),
   payload      TEXT    NOT NULL,                      -- JSON: the exact, already validated fields that will be posted
