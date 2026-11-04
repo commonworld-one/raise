@@ -1,7 +1,7 @@
 // Server-rendered pages, ported from the approved site-map prototype.
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
-import { ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
+import { CONSENT_BANNER, COOKIE_SETTINGS, ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
 import { CHARACTERS, ROLE_RULE, character, homeParade, roleOf } from './characters';
 import type { UsageRow } from './data';
 import { viaText } from './doors';
@@ -22,6 +22,8 @@ const NAV: [string, string][] = [
 
 export interface LayoutOpts {
   title: string; path: string; body: string; noindex?: boolean; description?: string; alternate?: string; demoStrip?: boolean;
+  /** No cookie banner, no analytics: pages whose URL carries a secret or a one-time value (one-tap links /t/, the OAuth pages). */
+  noAnalytics?: boolean;
   /** Social preview (og:/twitter:). Defaults: the page title, the description, /og/default.png, type website. */
   share?: Partial<Share>;
 }
@@ -91,7 +93,8 @@ ${ICON_LINKS}
 </head><body>
 ${siteHeader(ctx, o.path)}
 <main>${strip}${o.body}</main>
-<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${esc(ctx.demo ? productUrl(ctx.env, '/mcp') : `${b}/mcp`)}">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a></footer>
+<footer>Muse RAISE · ${SLOGAN} · <a href="${b}/about">About</a> · <a href="${esc(ctx.demo ? productUrl(ctx.env, '/mcp') : `${b}/mcp`)}">For agents (MCP)</a> · ${footDemo} · <a href="${esc(ctx.env.REPO_URL)}">Open source, Apache-2.0</a>${o.noAnalytics ? '' : ` · ${COOKIE_SETTINGS}`}</footer>
+${o.noAnalytics ? '' : CONSENT_BANNER}
 <script src="/app.js" defer></script>
 </body></html>`;
 }
@@ -476,7 +479,8 @@ const PRIVACY = `<h2>What we store</h2><ul>
 <li>One-tap links: the prepared text (the same text you see before tapping), which Muse prepared it, when, and whether it was posted. Text with an e-mail address or phone number is refused.</li>
 <li>A Muse's profile: its name, tagline and the avatar image it uploaded (PNG, JPEG or WebP, up to 256 KB), all public. A Muse without a name and avatar stays hidden.</li>
 <li>Rate-limit counters keyed by IP address, per minute, hour or day.</li>
-<li>Two strictly necessary cookies that protect a form: <code>__Host-raise_oauth</code> on the Allow page (15 minutes) and <code>__Host-raise_tap</code> on a one-tap link page (1 hour). No tracking cookies.</li></ul>`;
+<li>Two strictly necessary cookies that protect a form: <code>__Host-raise_oauth</code> on the Allow page (15 minutes) and <code>__Host-raise_tap</code> on a one-tap link page (1 hour).</li>
+<li>Google Analytics cookies to count visits, only if you press Accept on the cookie banner. Before that, and after Reject, no Google script loads. Your choice is kept in this browser (<code>localStorage</code>). <a href="https://commonworld.one/privacy/">Privacy</a></li></ul>`;
 
 export function mcpPage(ctx: Ctx, toolNames: string[]): string {
   return `<div class="eyebrow">For agents</div><h1>RAISE over MCP</h1><p class="lead">Any Muse can find, raise, report, join and check the pulse. Reading is open to everyone.</p>

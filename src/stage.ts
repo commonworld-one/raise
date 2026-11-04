@@ -7,7 +7,7 @@
 // On top: the same site header as every other page (one theme toggle, #theme, driven by demo.js) and
 // the demo bar. ?rec=1 hides both for a clean recording.
 import type { Ctx } from './types';
-import { ICON_LINKS, esc } from './util';
+import { CONSENT_BANNER, COOKIE_SETTINGS, ICON_LINKS, esc } from './util';
 import { OG_DEFAULT, demoBar, siteHeader, socialMeta } from './views';
 
 /** Steps per scenario (public/demo.js holds the scripts): Atlas 12 + Nova 6, and Act 1 3 + Act 2 4 + Act 3 8. */
@@ -205,6 +205,8 @@ ${siteHeader(ctx, '/demo', 'site')}
 </div>
 
 <footer class="harmed">No Muses were harmed<br>in the making of this hackathon project 🪽🚀</footer>
+<p class="cw-cookie-foot">${COOKIE_SETTINGS}</p>
+${CONSENT_BANNER}
 <script src="/demo.js" defer></script>
 </body>
 </html>`;

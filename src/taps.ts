@@ -105,7 +105,7 @@ const HEADERS = {
   'referrer-policy': 'same-origin',
 };
 const page = (ctx: Ctx, title: string, body: string, status = 200, extra: Record<string, string> = {}) =>
-  new Response(V.layout(ctx, { title, path: '', body, noindex: true }), { status, headers: { ...HEADERS, ...extra } });
+  new Response(V.layout(ctx, { title, path: '', body, noindex: true, noAnalytics: true }), { status, headers: { ...HEADERS, ...extra } });
 const note = (eyebrow: string, title: string, text: string) =>
   `<div class="empty"><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(title)}</h1><p class="lead" style="margin:0 auto">${text}</p></div>`;
 

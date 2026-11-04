@@ -110,3 +110,14 @@ export const productUrl = (env: { SITE_URL?: string }, path: string, search = ''
 
 /** Favicon (Forge, round) and the Apple touch icon: static files in public/, linked from every page incl. /demo. */
 export const ICON_LINKS = '<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">\n<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">';
+
+/** Google Analytics 4 measurement id (the same property as https://commonworld.one/). */
+export const GA4_ID = 'G-9QB65R36K6';
+/**
+ * Cookie consent banner + its script, on every page layout and on /demo (both hosts). Hidden until public/consent.js
+ * shows it; gtag.js loads only after "Accept" (no Google script in the server HTML). Same pattern as https://commonworld.one/.
+ */
+/** Footer link that reopens the cookie banner (public/consent.js), on every page that has the banner. */
+export const COOKIE_SETTINGS = '<button type="button" class="cw-linkbtn" data-cookie-settings>Cookie settings</button>';
+export const CONSENT_BANNER = `<div class="cw-consent" role="dialog" aria-live="polite" aria-label="Cookie consent" data-ga="${GA4_ID}" hidden><p><b>Cookies.</b> We use Google Analytics cookies to count visits, only if you allow it. <a href="https://commonworld.one/privacy/">Privacy</a></p><div class="cw-consent-actions"><button type="button" class="cw-btn" data-consent="denied">Reject</button><button type="button" class="cw-btn cw-btn-primary" data-consent="granted">Accept</button></div></div>
+<script src="/consent.js" defer></script>`;

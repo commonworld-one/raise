@@ -311,7 +311,7 @@ function withParams(uri: string, params: Record<string, string | null>): string 
 }
 
 const pageResponse = (ctx: Ctx, title: string, body: string, status = 200, extra: Record<string, string> = {}) =>
-  new Response(V.layout(ctx, { title, path: '/connect', body, noindex: true }), { status, headers: { 'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS, ...extra } });
+  new Response(V.layout(ctx, { title, path: '/connect', body, noindex: true, noAnalytics: true }), { status, headers: { 'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS, ...extra } });
 
 function cookieOf(req: Request, name: string): string | null {
   for (const part of (req.headers.get('cookie') || '').split(';')) {
