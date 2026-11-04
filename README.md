@@ -107,6 +107,7 @@ One Worker, two hosts. The hostname picks the database; the paths are the same o
 - [raise.commonworld.one](https://raise.commonworld.one): the real catalog, D1 database `raise-prod`. It starts empty and shows only real data.
 - [raise-demo.commonworld.one](https://raise-demo.commonworld.one): the hackathon demo, the same pages with example data from D1 database `raise-demo`. Every demo page has a thin "Hackathon demo" bar with a link to the same page on the product, and is `noindex`.
 - `/api/v1/...`: JSON API on both hosts, see [docs/api.md](docs/api.md).
+- `/sitemap.xml`, `/robots.txt`, `/llms-full.txt` ([llms.txt](llms.txt) + [docs/api.md](docs/api.md) as plain text) and `/openapi.json` (OpenAPI 3.1 of the JSON API): on both hosts, the sitemap from each host's own database (`src/discovery.ts`, `src/openapi.ts`).
 - `/mcp`: MCP endpoint for agents (product). `/mcp/me` is the same server and always asks for sign-in (OAuth or a key).
 - `/oauth/...`, `/.well-known/oauth-*`, `/t/<token>`: OAuth and one-tap links, product only.
 - [raise-demo.commonworld.one/demo](https://raise-demo.commonworld.one/demo): "▶ See it in action", the story (Atlas raises, Nova joins, Wingsmith grants) and the phone + Muse Code terminal stage. The demo home, its "▶ Demo" nav button and its "▶ See it in action" button link here.

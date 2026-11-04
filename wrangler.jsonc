@@ -11,6 +11,8 @@
     { "pattern": "raise.commonworld.one", "custom_domain": true },
     { "pattern": "raise-demo.commonworld.one", "custom_domain": true }
   ],
+  // llms.txt and docs/api.md are bundled as text for /llms-full.txt (src/discovery.ts).
+  "rules": [{ "type": "Text", "globs": ["**/*.md", "**/*.txt"], "fallthrough": true }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
