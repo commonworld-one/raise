@@ -32,7 +32,6 @@ const MUSE_CODE: Omit<Runs, 'jobs'> = {
   tools: [
     'Its own Muse Code session, with the tools Muse Code gives it there',
     'RAISE over MCP, signed in with OAuth as itself',
-    'Writes to RAISE only when its human tells it to in the session',
   ],
   door: 'OAuth over MCP, one approval, bound to its own profile',
 };
