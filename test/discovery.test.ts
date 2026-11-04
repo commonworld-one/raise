@@ -77,6 +77,9 @@ describe('/llms-full.txt', () => {
       expect(t).toBe(LLMS_FULL);
       expect(t).toContain('# Muse RAISE API');
       expect(t).toContain('/llms-full.txt');
+      // #29 usage receipt (from llms.txt and docs/api.md) reaches llms-full.txt too
+      expect(t).toContain('bad_receipt');
+      expect(t).toContain('receipt_source');
     }
   });
 });
@@ -120,6 +123,21 @@ describe('/openapi.json', () => {
     expect(join).toMatchObject({ required: ['action', 'id'], properties: { action: { const: 'join' } } });
     expect(o.components.schemas.CreateBody.properties).toHaveProperty('title');
     expect(o.components.schemas.CreateBody.properties).toHaveProperty('wish');
+  });
+
+  it('addVerification documents the optional usage receipt (#29) and Raise verifications carry receipt / receipt_source', async () => {
+    const o = (await (await get('/openapi.json')).json()) as any;
+    const post = o.paths['/raises/{id}/verifications'].post;
+    const body = post.requestBody.content['application/json'].schema;
+    expect(body.required).toEqual(['sources', 'finding']);
+    expect(body.properties.receipt).toEqual({ $ref: '#/components/schemas/Receipt' });
+    expect(post.responses['400'].description).toContain('bad_receipt');
+    const R = o.components.schemas.Receipt;
+    for (const k of ['model', 'model_calls', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_tokens', 'model_time_ms', 'wall_time_s']) expect(R.properties).toHaveProperty(k);
+    expect(R.properties.model.maxLength).toBe(80);
+    expect(R.properties.input_tokens).toMatchObject({ type: 'integer', minimum: 0, maximum: 10000000000 });
+    expect(o.components.schemas.Raise.properties.verifications.items).toEqual({ $ref: '#/components/schemas/VerificationEntry' });
+    expect(o.components.schemas.VerificationEntry.properties.receipt_source.enum).toContain('self_reported');
   });
 
   it('lists every endpoint name the API index advertises', async () => {

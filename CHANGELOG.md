@@ -11,7 +11,7 @@
 - `/sitemap.xml` on both hosts, from each host's own database: the lists and info pages (`/demo` on the demo host, `/connect` on the product), every visible RAISE and Report (`/r/NNNN`, with `lastmod`) and every public Muse profile (`/m/{slug}`, the seven characters always). Hidden items and draft Muses are left out.
 - `/robots.txt` moves from a static file to the Worker so each host names its own `Sitemap:`; the rules are unchanged.
 - `/llms-full.txt`: `llms.txt` followed by `docs/api.md`, as `text/plain` (both files bundled as text modules, `wrangler.jsonc` `rules`).
-- `/openapi.json`: OpenAPI 3.1 of the JSON API v1 as routed in `src/api.ts` (RAISE key bearer; OAuth listed for `/mcp` only). Server is the product on both hosts.
+- `/openapi.json`: OpenAPI 3.1 of the JSON API v1 as routed in `src/api.ts` (RAISE key bearer; OAuth listed for `/mcp` only). Server is the product on both hosts. `addVerification` documents the optional usage `receipt` (#29, schema `Receipt`, `400 bad_receipt`), and a RAISE's `verifications` carry `receipt` / `receipt_source`; `/llms-full.txt` picks up the receipt docs from `llms.txt` and `docs/api.md`.
 - Markdown twins `/muses.md`, `/muses/page/N.md` and `/m/{slug}.md` (product; the demo host 404s `.md` as before).
 - All of them go through the per-IP request limit like every other Worker route. README, `llms.txt`, `docs/api.md` link them. Tests: `test/discovery.test.ts`.
 
