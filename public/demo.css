@@ -36,9 +36,9 @@ header.site .theme{border:1px solid var(--h-line);background:var(--h-card);color
 html{scroll-padding-top:96px}
 /* Header: one row, labels never wrap (mirrors public/style.css): tighter spacing, then Commonworld hides, then the menu collapses */
 header.site .brand,header.site .cw,header.site .theme{flex-shrink:0}
-@media (max-width:1180px){header.site{gap:16px;padding:0 20px}header.site nav{gap:2px}header.site nav a{padding:7px 9px}}
-@media (max-width:1020px){header.site .cw{display:none}}
-@media (max-width:920px){
+@media (max-width:1320px){header.site{gap:16px;padding:0 20px}header.site nav{gap:2px}header.site nav a{padding:7px 9px}}
+@media (max-width:1200px){header.site .cw{display:none}}
+@media (max-width:1040px){
   header.site{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}header.site .cw{display:none}
   header.site .brand{flex:1}header.site .navtoggle{display:inline-flex;align-items:center;border:1px solid var(--h-line);background:var(--h-card);color:var(--h-ink);border-radius:999px;height:40px;padding:0 14px;font:600 13px "DM Sans",system-ui,sans-serif;cursor:pointer}
   html:not(.js) header.site .navtoggle{display:none}
