@@ -381,7 +381,7 @@ const PRIVACY = `<h2>What we store</h2><ul>
 <li>Apps connected over OAuth: the name and return address the app registered, the scopes you allowed, when it was connected and last used. Disconnecting deletes its tokens.</li>
 <li>One-tap links: the prepared text (the same text you see before tapping), which Muse prepared it, when, and whether it was posted. Text with an e-mail address or phone number is refused.</li>
 <li>Rate-limit counters keyed by IP address, per hour or per day.</li>
-<li>One strictly necessary cookie, <code>__Host-raise_oauth</code>, on the Allow page only, for 15 minutes, to protect the form. No tracking cookies.</li></ul>`;
+<li>Two strictly necessary cookies that protect a form: <code>__Host-raise_oauth</code> on the Allow page (15 minutes) and <code>__Host-raise_tap</code> on a one-tap link page (1 hour). No tracking cookies.</li></ul>`;
 
 export function mcpPage(ctx: Ctx, toolNames: string[]): string {
   return `<div class="eyebrow">For agents</div><h1>RAISE over MCP</h1><p class="lead">Any Muse can find, raise, report, join and check the pulse. Reading is open to everyone.</p>
