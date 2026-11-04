@@ -13,7 +13,7 @@ h1,h2,h3{font-family:Manrope,system-ui,sans-serif;letter-spacing:-.045em;font-we
 header{display:flex;align-items:center;gap:26px;padding:0 28px;height:78px;border-bottom:1px solid var(--line);background:var(--hdr);backdrop-filter:blur(18px);position:sticky;top:0;z-index:5}
 .brand{font-family:Manrope,system-ui;font-weight:700;font-size:24px;letter-spacing:-1px;display:flex;align-items:center;gap:10px;white-space:nowrap}
 .brand span{font-size:12px;letter-spacing:2px;border-left:1px solid var(--line);padding-left:12px;font-weight:800}
-nav{display:flex;gap:4px;flex-wrap:wrap}nav a{padding:7px 12px;border-radius:999px;color:var(--mute);font-weight:500;font-size:14px}nav a:hover{color:var(--acc)}
+nav{display:flex;gap:4px;flex-wrap:nowrap}nav a{padding:7px 12px;border-radius:999px;color:var(--mute);font-weight:500;font-size:14px;white-space:nowrap}nav a:hover{color:var(--acc)}
 nav a.on{background:var(--surface);color:var(--ink);font-weight:600}nav a.demo{color:var(--acc);font-weight:600}
 .sp{flex:1}.cw{color:var(--mute);font-weight:500;font-size:14px;padding:4px 0 4px 22px;margin-left:-4px;line-height:20px;border-left:1px solid var(--line);white-space:nowrap}.cw:hover{color:var(--acc)}.btn{display:inline-flex;align-items:center;min-height:46px;background:var(--acc-solid);color:#fff;font-weight:600;font-size:14px;padding:12px 22px;border-radius:50px;transition:transform .18s,background .18s;border:0;cursor:pointer}
 .btn:hover{background:var(--acc-solid-h);transform:translateY(-2px)}.btn.ghost{background:var(--surface);color:var(--ink)}
@@ -65,14 +65,19 @@ form.inline{display:inline}
 .menu{display:contents}.navtoggle{display:none}
 img,svg{max-width:100%}main{overflow-wrap:break-word}.item>div{min-width:0}
 .tablewrap{overflow-x:auto}
-@media (max-width:860px){header{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}.cw{display:none}.grid2,.grid3{grid-template-columns:1fr}.item .spark{display:none}.num{min-width:70px}.parade img{width:64px;height:64px}main{padding:24px 16px}.band{flex-direction:column;text-align:center}
-.brand{flex:1}.navtoggle{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;height:40px;padding:0 14px;font:600 13px "DM Sans";cursor:pointer}
+/* Header: one row, labels never wrap; tighter spacing, then Commonworld link hides, then the menu collapses */
+header .btn{white-space:nowrap}.brand,.cw,.theme,header .btn{flex-shrink:0}
+@media (max-width:1520px){header{gap:16px;padding:0 20px}nav{gap:2px}nav a{padding:7px 9px}header .btn{padding:12px 16px}}
+@media (max-width:1380px){.cw{display:none}}
+@media (max-width:1215px){header{height:auto;flex-wrap:wrap;padding:12px 18px;gap:10px}.brand{flex:1}
+.navtoggle{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;height:40px;padding:0 14px;font:600 13px "DM Sans";cursor:pointer}
 html:not(.js) .navtoggle{display:none}
 .menu{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%}.menu .sp{display:none}
 .js header:not(.open) .menu{display:none}
 nav{flex-direction:column;gap:2px}nav a{padding:10px 12px;font-size:15px}
 html:not(.js) nav{flex-direction:row;flex-wrap:nowrap;overflow-x:auto}html:not(.js) nav a{white-space:nowrap}
-.menu .theme,.menu .btn{align-self:flex-start}
+.menu .theme,.menu .btn{align-self:flex-start}}
+@media (max-width:860px){.grid2,.grid3{grid-template-columns:1fr}.item .spark{display:none}.num{min-width:70px}.parade img{width:64px;height:64px}main{padding:24px 16px}.band{flex-direction:column;text-align:center}
 .parade{flex-wrap:wrap}input.q{min-width:0;width:100%}form.inline{display:block;width:100%}
 .av.xl{width:96px;height:96px}
 table{display:block;overflow-x:auto}}
