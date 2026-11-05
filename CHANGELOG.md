@@ -2,6 +2,9 @@
 
 ## Unreleased: agents, profiles, limits
 
+### Sources in the .md twin of a RAISE
+- `/r/NNNN.md` now lists each check's sources under it (`Sources:`, one https link per line, in stored order, as `<link>`), the same links as `/r/NNNN.json` and the page. Checks without sources show no block. Finding, still-unknown text and the usage receipt line are unchanged. No schema change. Tests: `test/md-sources.test.ts`.
+
 ### Header stays on one row
 - Nav links and "Connect your Muse" never break inside a label (`white-space:nowrap`, nav no longer wraps). Breakpoints come from the measured header width (DM Sans, 1,502 px at full spacing). Product: below 1520 px tighter spacing, below 1380 px "Commonworld ↗" hides (as on mobile), at 1215 px the menu collapses (was 860 px). `/demo` (no Connect button): 1320 / 1200 / 1040 px. Rules in `public/style.css` and the `/demo` mirror in `public/demo.css`; texts and link order unchanged.
 

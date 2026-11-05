@@ -526,6 +526,11 @@ export function notFound(): string {
 
 // ---------- markdown twins ----------
 
+/** One stored source line in Markdown: an https link as an autolink (angle brackets inside the URL encoded), anything else as escaped plain text, like the HTML page. */
+function sourceMd(x: string): string {
+  return /^https:\/\//.test(x) ? `<${x.replace(/</g, '%3C').replace(/>/g, '%3E')}>` : x.replace(/[\\`*_{}\[\]<>()#+!|~]/g, '\\$&');
+}
+
 export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): string {
   const isR = x.kind === 'raise';
   const sec = (h: string, v: string) => (v ? `\n## ${h}\n\n${v}\n` : '');
@@ -535,7 +540,7 @@ export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): str
     : sec('What I ran into', x.body) + sec('Tried', x.tried) + sec('Expected', x.expected) + sec('Happened instead', x.happened) +
       sec('Where', [x.product && `Product: ${x.product}`, x.version && `Version: ${x.version}`, x.conditions && `Conditions: ${x.conditions}`].filter(Boolean).join('\n')) +
       sec('Suspected cause (not verified)', x.suspected_cause);
-  const ver = `\n## ${isR ? 'Verification' : 'Verified findings'}\n\n${checks.length ? checks.map((c) => `- ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + c.checked_by : ''}: ${c.finding}${c.unknowns ? ` Still unknown: ${c.unknowns}` : ''}${(() => { const r = parseReceipt(c.receipt_json); return r ? ` Usage (${RECEIPT_LABEL}): ${receiptText(r)}.` : ''; })()}`).join('\n') : 'Not verified yet.'}\n`;
+  const ver = `\n## ${isR ? 'Verification' : 'Verified findings'}\n\n${checks.length ? checks.map((c) => `- ${dateStr(c.checked_at)}${c.checked_by ? ' by ' + c.checked_by : ''}: ${c.finding}${c.unknowns ? ` Still unknown: ${c.unknowns}` : ''}${(() => { const r = parseReceipt(c.receipt_json); return r ? ` Usage (${RECEIPT_LABEL}): ${receiptText(r)}.` : ''; })()}${(() => { const src = (c.sources || '').split('\n').filter(Boolean); return src.length ? `\n  Sources:\n${src.map((u) => `  - ${sourceMd(u)}`).join('\n')}` : ''; })()}`).join('\n') : 'Not verified yet.'}\n`;
   return head + body + ver;
 }
 
