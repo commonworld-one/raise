@@ -7,7 +7,7 @@ import { handleMcp, tools } from './mcp';
 import { activityItem, activityJson, pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
-import { demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
+import { DEMO_REFERENCE_MS, demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
 import { characterMuse } from './characters';
 import { applyLive, cardWeek, isLive } from './live';
 import { demoPage } from './stage';
@@ -81,7 +81,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const target = demo ? u.origin : demoSite(env);
     return new Response(null, { status, headers: { location: sameOrigin(target, rest + u.search) } });
   }
-  const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now: Date.now(), ip };
+  const now = Date.now();
+  const ctx: Ctx = { env, db: demo ? env.DEMO_DB : env.DB, demo, base: '', origin: u.origin, path, search: u.search, now, ageNow: demo ? DEMO_REFERENCE_MS : now, ip };
 
   // Discovery files on both hosts, each from its own database (#21): sitemap.xml, robots.txt, llms-full.txt, openapi.json.
   const disc = await handleDiscovery(ctx, req, path);
@@ -129,9 +130,9 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
 
   if (path === '/') {
     const now = ctx.now;
-    let hot = await listRaises(ctx.db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, now);
-    if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, now);
-    const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, now);
+    let hot = await listRaises(ctx.db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, ctx.ageNow);
+    if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, ctx.ageNow);
+    const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, ctx.ageNow);
     if (ctx.demo) {
       // Demo home: hero with the parade and "▶ See it in action" (-> /demo), the demo lists, every demo page.
       // The lists use the same live formula as /raises and /reports (src/live.ts); the headline counters add up the cards.
@@ -158,7 +159,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const kind: Kind | undefined = list === 'reports' ? 'report' : list === 'raises' ? 'raise' : undefined;
     // Granted RAISEs get no new joins, so last_activity_at stops moving: the shelf defaults to all-time.
     const params = { ...listParams(queryObj(u), kind, list === 'granted' ? 'all' : '7d'), page: n, granted: list === 'granted' };
-    const r = await listRaises(ctx.db, params, ctx.now);
+    const r = await listRaises(ctx.db, params, ctx.ageNow);
     if (n > 1 && !r.items.length) return notFound(ctx, twin);
     const root = `${ctx.base}/${list}`;
     const next = r.hasMore ? `${ctx.origin}${root}/page/${n + 1}.json${u.search}` : null;
@@ -200,7 +201,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const twin = m[3] === '.json' ? 'json' : m[3] === '.md' ? 'md' : 'html';
     if (!muse) return notFound(ctx, twin);
     const n = page(m[2]);
-    const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.now);
+    const items = await listRaises(ctx.db, { museId: muse.id, sort: 'new', active: 'all', page: n }, ctx.ageNow);
     if (n > 1 && !items.items.length) return notFound(ctx, twin);
     if (twin === 'md') return md(V.museMd(ctx, muse, items));
     if (m[3] === '.json') {
@@ -224,7 +225,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   m = /^\/r\/(\d{1,9})(\.json|\.md)?$/.exec(path);
   if (m) {
     const id = Number(m[1]);
-    const r = await getRaise(ctx.db, id, ctx.now);
+    const r = await getRaise(ctx.db, id, ctx.ageNow);
     if (!r) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
     const checks = await getVerifications(ctx.db, id);
     if (m[2] === '.json') return json({ ...raiseJson(ctx, r), verifications: checks.map(verificationJson), joined_by: (await getJoiners(ctx.db, id, 20)).map((j) => ({ slug: j.slug, name: j.name, note: j.note })) });

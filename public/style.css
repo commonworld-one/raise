@@ -88,6 +88,8 @@ table{display:block;overflow-x:auto}}
 .tag.role{background:var(--surface);font-weight:700}
 .roles{margin:18px 0 0}.roles .m{margin-top:4px}
 @media (max-width:420px){.parade{gap:6px}.parade .pn{font-size:12px}}
+/* Demo home lists: pair the two columns on wide screens - same column height, the three cards share it evenly, the All-links sit on one line. Narrow (<=860px) keeps one stacked column. */
+@media (min-width:861px){.home-lists>div{display:flex;flex-direction:column}.home-lists .col{flex:1}.home-lists .col .item{flex:1}}
 /* live demo numbers */
 .season{margin:6px 0 10px}.livefoot{text-align:center;margin:18px 0 0}
 /* Demo host only: big live headline numbers (src/live.ts headlineBlock) on the home, /granted, /muses, /corporation */
