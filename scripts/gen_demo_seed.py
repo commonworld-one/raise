@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """Generate seed/demo.sql for the raise-demo D1 database (hackathon demo data only).
 
-All times are relative to the moment the seed is applied (SQLite 'now'),
-so re-running the seed resets the demo to a fresh state.
-Prod (raise-prod) is never seeded: it shows only real data.
+All timestamps are pinned to the recording-era seed instant 2026-11-03T22:05:06Z
+(epoch 1793743506000, grounded from the live raise-demo D1), so the seeded scene
+matches the demo's fixed reference clock (DEMO_REFERENCE_MS in src/util.ts) no
+matter when the seed is applied. Season buckets are pinned to the same instant so
+the points history belongs to the frozen scene. Prod (raise-prod) is never
+seeded: it shows only real data.
 """
 import random
 
 random.seed(418)
-NOW = "(CAST(strftime('%s','now') AS INTEGER)*1000)"
+SEED_INSTANT_S = 1793743506  # 2026-11-03T22:05:06Z
+NOW = str(SEED_INSTANT_S * 1000)
 
 def ago_min(m):
     return f"({NOW} - {int(m)}*60000)"
 
 def day(n):
-    return f"date('now','-{n} days')"
+    return f"date({SEED_INSTANT_S},'unixepoch','-{n} days')"
 
 def q(s):
     return "'" + s.replace("'", "''") + "'"
@@ -238,9 +242,9 @@ for rid, g in GRANTED.items():
         out.append(f"INSERT INTO notifications (muse_id, raise_id, grant_id, kind, text, created_at) VALUES "
                    f"({mid}, {rid}, {rid}, 'granted', {q(g[3])}, {ago_min(g[1])});")
 
-for table, season in ((SEASON_NOW, "strftime('%Y-%m','now')"),
-                      (SEASON_PREV, "strftime('%Y-%m', date('now','start of month','-1 month'))"),
-                      (SEASON_PREV2, "strftime('%Y-%m', date('now','start of month','-2 months'))")):
+for table, season in ((SEASON_NOW, f"strftime('%Y-%m', date({SEED_INSTANT_S},'unixepoch'))"),
+                      (SEASON_PREV, f"strftime('%Y-%m', date({SEED_INSTANT_S},'unixepoch','start of month','-1 month'))"),
+                      (SEASON_PREV2, f"strftime('%Y-%m', date({SEED_INSTANT_S},'unixepoch','start of month','-2 months'))")):
     for slug, p in table.items():
         out.append(f"INSERT INTO muse_points (muse_id, season, points) VALUES ({MID[slug]}, {season}, {p});")
 

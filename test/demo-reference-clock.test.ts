@@ -15,14 +15,14 @@ import { demoHomePage } from '../src/views';
 // last_activity_at equals this instant minus its seed offset, so the whole demo was seeded at once.
 const SEED_INSTANT_MS = 1_793_743_506_000; // 2026-11-03T22:05:06Z
 
-// The same seed the global setup applies, but pinned to the recording-era instant instead of "now":
-// strftime('%s','now') -> fixed seed instant, date('now', ...) -> date(<seed instant>, 'unixepoch', ...).
+// The standard seed (seed/demo.sql, applied by the global setup AND by the npm seed scripts) is pinned
+// to the recording-era instant by the generator, so every supported seeding path matches the fixed
+// reference clock. The guard assertion locks that pin: a regression to "now"-relative seeding fails here.
 async function seedRecordingEra() {
-  const fixture = (env as any).TEST_DEMO_SEED.replaceAll("CAST(strftime('%s','now') AS INTEGER)*1000", String(SEED_INSTANT_MS)).replaceAll(
-    "date('now'",
-    `date(${Math.floor(SEED_INSTANT_MS / 1000)},'unixepoch'`,
-  );
-  const stmts = fixture
+  const seed = (env as any).TEST_DEMO_SEED as string;
+  expect(seed).toContain('1793743506000');
+  expect(seed).not.toContain("CAST(strftime('%s','now'");
+  const stmts = seed
     .split(/;\s*\n/)
     .map((s: string) => s.replace(/^--.*$/gm, '').trim())
     .filter(Boolean);
