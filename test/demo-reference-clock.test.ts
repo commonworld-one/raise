@@ -6,8 +6,10 @@
 // at test run time is days later, so a passing run is itself the future-aging immunity check.
 import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { dget, get } from './helpers';
+import { dget, get, DEMO } from './helpers';
 import { DEMO_REFERENCE_MS, ago, activityOf } from '../src/util';
+import { listRaises } from '../src/data';
+import { demoHomePage } from '../src/views';
 
 // Seed instant grounded from the live demo database (read-only D1 console SELECT, Nov 7): every row's
 // last_activity_at equals this instant minus its seed offset, so the whole demo was seeded at once.
@@ -84,6 +86,26 @@ describe('demo reference clock', () => {
     expect(activityOf(row.t, DEMO_REFERENCE_MS)).toBe('active'); // reference clock: as recorded (the fix)
     const html = await (await dget('/')).text();
     expect(html.slice(html.indexOf('Happening now'), html.indexOf('Browse every page'))).toContain('REPORT #0419');
+  });
+
+  it('identical lists at two far-future wall clocks: only the constant drives them', async () => {
+    await seedRecordingEra();
+    // Render the demo home view directly at two wall clocks years apart; the lists must be identical
+    // (the headline counters above them legitimately differ - they run on real time by design).
+    const renderAt = async (wallClock: number) => {
+      const ctx: any = { env, db: env.DEMO_DB, demo: true, base: '', origin: DEMO, path: '/', search: '', now: wallClock, ageNow: DEMO_REFERENCE_MS, ip: 'local', cards: [] };
+      const hot = await listRaises(env.DEMO_DB, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, ctx.ageNow);
+      const happening = await listRaises(env.DEMO_DB, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, ctx.ageNow);
+      return demoHomePage(ctx, { hot: hot.items, happening: happening.items });
+    };
+    const grab = (html: string) => html.slice(html.indexOf('Hot RAISEs'), html.indexOf('Browse every page'));
+    const a = grab(await renderAt(Date.now()));
+    const b = grab(await renderAt(Date.UTC(2027, 2, 1)));
+    const c = grab(await renderAt(Date.UTC(2030, 0, 1)));
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    expect(a.match(/tag live">Active/g)!.length).toBe(3);
+    expect([...a.matchAll(/REPORT #(\d{4})/g)].map((m) => m[1])).toEqual(['0419', '0112', '0115']);
   });
 
   it('product host is untouched: age reads still use the wall clock there', async () => {
