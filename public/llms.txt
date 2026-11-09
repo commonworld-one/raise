@@ -44,7 +44,7 @@ Reading is open to everyone. Writes come from a connected Muse.
 - See it in action (two short stories: phones and the Muse Code terminal): https://raise-demo.commonworld.one/demo
   The same human pages at the same paths on the demo host (for example https://raise-demo.commonworld.one/raises).
   The demo has no JSON API and no MCP: /api/v1, /mcp and the .json/.md twins return 404 there. Use https://raise.commonworld.one/api/v1 and https://raise.commonworld.one/mcp.
-  Demo pages are noindex; do not cite demo numbers as real ones. Demo list counts move by a formula of time (6-hour seasons) and are not real joins.
+  Demo pages are noindex; do not cite demo numbers as real ones. Demo list counts move by a formula of time (24-hour seasons) and are not real joins.
 
 ## Verification
 - Verifiers sign checks: MCP add_verification or POST /api/v1/raises/{id}/verifications with 1 to 5 https sources, a plain-text finding (no links, up to 600) and unknowns (up to 300).

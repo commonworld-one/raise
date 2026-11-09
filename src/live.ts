@@ -14,17 +14,26 @@ const isScenario = (id: number): boolean => id === SCENARIO_RAISE_ID || id === S
  * The formula. Self-contained on purpose: it is also sent to the browser via Function#toString,
  * so it must not reference anything outside its own body.
  *
- * - Seasons last 6 hours, aligned to the UTC epoch (00:00, 06:00, 12:00, 18:00 UTC).
+ * - Seasons last 24 hours, aligned to UTC midnight (one conserved daily cycle, reset at 00:00 UTC).
  * - Each card starts a season at 10,000-60,000 and ends it at 250,000-5,000,000 (log-uniform,
  *   so a few leaders reach millions), then the next season starts over.
  * - A card's character comes from its seed: steady, sleeper (quiet, then a late spike) or
  *   fader (fast start, then it flattens).
  * - Within a season the count never goes down (every step is a monotonic map of time).
+ * - The demo is conserved: cumulative numbers (total, week) are the recording's value plus the
+ *   current day's growth, so they stay near the recorded scene forever instead of growing without
+ *   bound, and the "Season N" label is frozen at the recording's season.
  */
 export function liveModel() {
-  const SEASON_MS = 6 * 3600 * 1000;
-  // Season 1 starts at 2026-11-01 00:00 UTC; the label counts from there.
+  const SEASON_MS = 24 * 3600 * 1000;
+  // The grid the recording was made with: all-time bases below reproduce the recorded scene.
+  const LEGACY_MS = 6 * 3600 * 1000;
+  // Season 1 starts at 2026-11-01 00:00 UTC; legacy season numbering counted from there.
   const SEASON_ONE = Date.UTC(2026, 10, 1);
+  // The recorded demo instant (DEMO_REFERENCE_MS in src/util.ts, inlined: this body is serialized).
+  const REF = 1793809645000;
+  // The "Season N" label is frozen at the recording's season (15), not derived from the clock.
+  const SEASON_LABEL = 15;
   const CHARACTERS = ['steady', 'sleeper', 'fader'];
   const hash = (a: number, b: number): number => {
     let x = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) | 0;
@@ -33,7 +42,8 @@ export function liveModel() {
     return (x >>> 0) / 4294967296;
   };
   const season = (t: number): number => Math.floor(t / SEASON_MS);
-  const seasonNo = (t: number): number => Math.max(1, season(t) - Math.floor(SEASON_ONE / SEASON_MS) + 1);
+  // Frozen at the recording's season: the conserved demo never advances the label.
+  const seasonNo = (_t: number): number => SEASON_LABEL;
   const seasonStart = (t: number): number => season(t) * SEASON_MS;
   const character = (seed: number): string => CHARACTERS[Math.floor(hash(seed, 7) * 3)]!;
   const shape = (seed: number, n: number, p: number): number => {
@@ -56,13 +66,15 @@ export function liveModel() {
     const lo = Math.log(250000), hi = Math.log(5000000);
     return [start, Math.exp(lo + hash(seed, n * 5 + 2) * (hi - lo))];
   };
-  const count = (seed: number, t: number): number => {
-    const n = season(t);
-    const p = (t - n * SEASON_MS) / SEASON_MS;
+  /** The count on a given season grid (ms = season length); the current grid is 24h, the recording's was 6h. */
+  const countOn = (seed: number, t: number, ms: number): number => {
+    const n = Math.floor(t / ms);
+    const p = (t - n * ms) / ms;
     const [a, b] = ends(seed, n);
     return Math.floor(a + (b - a) * shape(seed, n, p));
   };
-  /** Joined since the season started (a season never crosses a UTC day, so this is "today"). */
+  const count = (seed: number, t: number): number => countOn(seed, t, SEASON_MS);
+  /** Joined since the season started (a season is exactly a UTC day, so this is "today"). */
   const today = (seed: number, t: number): number => count(seed, t) - count(seed, seasonStart(t));
   /** Cumulative counts from the season start to t, `points` samples. */
   const spark = (seed: number, t: number, points = 7): number[] => {
@@ -71,23 +83,27 @@ export function liveModel() {
     for (let i = 0; i < points; i++) out.push(count(seed, s + ((t - s) * i) / (points - 1)));
     return out;
   };
-  /**
-   * All-time count for a seed: every finished season's final count plus the current season's count.
-   * Never goes down: at a season boundary it gains the new season's starting count. Past seasons are memoized.
-   */
-  const memo: Record<string, number> = {};
-  const FIRST = Math.floor(SEASON_ONE / SEASON_MS);
-  const total = (seed: number, t: number): number => {
-    const n = season(t);
+  /** All-time count on the legacy 6-hour grid (what the recording showed at time t). */
+  const legacyTotal = (seed: number, t: number): number => {
     let past = 0;
-    for (let k = FIRST; k < n; k++) {
-      const key = seed + ':' + k;
-      if (memo[key] === undefined) memo[key] = count(seed, (k + 1) * SEASON_MS - 1);
-      past += memo[key]!;
-    }
-    return past + (n >= FIRST ? count(seed, t) : 0);
+    const first = Math.floor(SEASON_ONE / LEGACY_MS);
+    for (let k = first; k < Math.floor(t / LEGACY_MS); k++) past += countOn(seed, (k + 1) * LEGACY_MS - 1, LEGACY_MS);
+    return past + (t >= SEASON_ONE ? countOn(seed, t, LEGACY_MS) : 0);
   };
-  return { SEASON_MS, season, seasonNo, seasonStart, character, count, today, spark, total };
+  /** The recording's all-time total: the fixed base every cumulative number starts each day from. */
+  const baseMemo: Record<number, number> = {};
+  const base = (seed: number): number => (baseMemo[seed] ??= legacyTotal(seed, REF));
+  /**
+   * All-time count for a seed: the recording's total plus the current day's count. Bounded forever
+   * between base + 10,000 and base + 5,000,000; restarts with the daily cycle, never grows without bound.
+   */
+  const total = (seed: number, t: number): number => base(seed) + count(seed, t);
+  /**
+   * "This week" for a seed: the recording's last-7-days joins plus today's growth. Bounded and
+   * daily-restarting like total; always at least "today".
+   */
+  const week = (seed: number, t: number): number => base(seed) - legacyTotal(seed, REF - 7 * 24 * 3600 * 1000) + today(seed, t);
+  return { SEASON_MS, season, seasonNo, seasonStart, character, count, today, spark, total, week };
 }
 
 export const LIVE = liveModel();
@@ -224,9 +240,8 @@ requestAnimationFrame(intro);
 }
 
 // ---------- one card's page /r/NNNN (demo host only) ----------
-const WEEK_MS = 7 * 24 * 3600 * 1000;
-/** Joined in the last 7 days: the all-time total's growth, so it is never below "today". */
-export const cardWeek = (id: number, t: number): number => LIVE.total(id, t) - LIVE.total(id, t - WEEK_MS);
+/** Joined "this week": the recording's week plus today's growth (src/live.ts liveModel.week), so it is never below "today". */
+export const cardWeek = (id: number, t: number): number => LIVE.week(id, t);
 /** "Muses saw it": every card, scenario ones included. Grows with the card's own all-time joins plus its own view seed. */
 export const cardViews = (id: number, t: number): number => Math.floor(1.3 * LIVE.total(id, t) + 0.5 * LIVE.total(700000 + id, t));
 
@@ -238,12 +253,12 @@ export const cardViews = (id: number, t: number): number => Math.floor(1.3 * LIV
 export function cardScript(id: number, live: boolean): string {
   return `<script>${SHIM}(function(M,id,live){
 var box=document.querySelector('[data-live-card]');if(!box)return;
-var f=function(n){return Math.floor(n).toLocaleString('en-US')},W=7*24*3600*1000;
+var f=function(n){return Math.floor(n).toLocaleString('en-US')};
 var q=function(k){return box.querySelector('[data-c="'+k+'"]')};
 function pts(s,w,h){var mx=Math.max.apply(null,s.concat([1]));return s.map(function(v,i){return (i/(s.length-1)*w).toFixed(1)+','+(h-(v/mx)*(h-3)-1).toFixed(1)}).join(' ')}
 function set(t){var v=q('views');if(v)v.textContent=f(1.3*M.total(id,t)+0.5*M.total(700000+id,t));
 if(!live)return;var c=q('joins');if(c)c.textContent=f(M.count(id,t));var d=q('today');if(d)d.textContent=f(M.today(id,t));
-var w=q('week');if(w)w.textContent=f(M.total(id,t)-M.total(id,t-W));var p=box.querySelector('.spark polyline');if(p)p.setAttribute('points',pts(M.spark(id,t),380,90))}
+var w=q('week');if(w)w.textContent=f(M.week(id,t));var p=box.querySelector('.spark polyline');if(p)p.setAttribute('points',pts(M.spark(id,t),380,90))}
 set(Date.now());if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
 var a=null;function start(){if(a||document.hidden)return;set(Date.now());a=setInterval(function(){set(Date.now())},250)}
 function stop(){clearInterval(a);a=null}
@@ -256,7 +271,7 @@ document.addEventListener('visibilitychange',function(){document.hidden?stop():s
  * A Muse's points on the demo host follow the live cards, by the POINTS rules (src/data.ts): every join on one of
  * its own cards gives the author 1, so its season points are its stored season points plus the live count of each
  * of its own cards (the same number the card shows), plus 1 per join it makes on others' cards (a quarter of a live
- * count on its own synthetic seed, 910000 + Muse id; never a card id). Season points restart with the 6-hour season,
+ * count on its own synthetic seed, 910000 + Muse id; never a card id). Season points restart with the daily season,
  * like the cards. All-time points use LIVE.total instead of LIVE.count, so they only go up and are never below the season.
  * Scenario cards (#0418, #0419) keep their stored numbers, already inside the stored points.
  */

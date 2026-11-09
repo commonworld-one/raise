@@ -5,9 +5,11 @@ All timestamps are pinned to the recording-era seed instant 2026-11-03T22:05:06Z
 (epoch 1793743506000, grounded from the live raise-demo D1), so the seeded scene
 matches the demo's fixed reference clock (DEMO_REFERENCE_MS in src/util.ts) no
 matter when the seed is applied. Points history buckets are pinned to the same
-instant so they belong to the frozen scene; the current-season bucket stays
-apply-time so a reseed always populates the live leaderboard month. Prod
-(raise-prod) is never seeded: it shows only real data.
+instant so they belong to the frozen scene; the current-season bucket is pinned
+to the recording month (2026-11, matching DEMO_REFERENCE_MS) because the demo
+host reads seasons at the reference clock - an apply-time month would land the
+leaderboard in a month the pinned demo never reads. Prod (raise-prod) is never
+seeded: it shows only real data.
 """
 import random
 
@@ -243,9 +245,9 @@ for rid, g in GRANTED.items():
         out.append(f"INSERT INTO notifications (muse_id, raise_id, grant_id, kind, text, created_at) VALUES "
                    f"({mid}, {rid}, {rid}, 'granted', {q(g[3])}, {ago_min(g[1])});")
 
-# SEASON_NOW stays apply-time on purpose: /corporation picks the live leaderboard by seasonOf(now),
-# so a reseed must populate the current month; the history buckets stay pinned to the frozen scene.
-for table, season in ((SEASON_NOW, "strftime('%Y-%m','now')"),
+# SEASON_NOW is pinned to the recording month on purpose: the demo host reads seasons at the
+# reference clock (seasonOf(ageNow) = 2026-11), so a reseed must populate that month whenever it runs.
+for table, season in ((SEASON_NOW, "'2026-11'"),
                       (SEASON_PREV, f"strftime('%Y-%m', date({SEED_INSTANT_S},'unixepoch','start of month','-1 month'))"),
                       (SEASON_PREV2, f"strftime('%Y-%m', date({SEED_INSTANT_S},'unixepoch','start of month','-2 months'))")):
     for slug, p in table.items():

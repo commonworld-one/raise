@@ -5,7 +5,7 @@ import { LIVE, MUSE_JOIN_SHARE, MUSE_SEED, museAllPoints, musePointsSpec, museSc
 import { dget, get } from './helpers';
 
 const H = LIVE.SEASON_MS;
-const T0 = Date.UTC(2026, 10, 3, 12, 0, 0);
+const T0 = Date.UTC(2026, 10, 3, 0, 0, 0); // a season start (00:00 UTC)
 const n = (s: string) => Number(s.replace(/,/g, ''));
 
 describe('live Muse points formula', () => {
@@ -23,15 +23,22 @@ describe('live Muse points formula', () => {
     expect(museSeasonPoints(p, t)).toBe(412 + LIVE.count(101, t) + LIVE.count(102, t) + Math.floor(MUSE_JOIN_SHARE * LIVE.count(MUSE_SEED + 1, t)));
   });
 
-  it('season restarts with the 6-hour season; all time never goes down and is never below the season', () => {
-    let prevAll = 0;
+  it('season and all time restart with the daily season; all time is bounded and never below the season', () => {
+    // Both counters include the stored bases (points_all / stored season points), so this compares the
+    // numbers a visitor actually sees, not just the live-count deltas.
     for (let t = T0; t < T0 + 2 * H; t += 97_000) {
       const a = museAllPoints(p, t), s = museSeasonPoints(p, t);
-      expect(a).toBeGreaterThanOrEqual(prevAll);
       expect(a).toBeGreaterThanOrEqual(s);
-      prevAll = a;
+    }
+    // Explicitly at the boundary instants: just after the daily restart the season drops near its stored
+    // base while all time keeps its larger stored base, so all time >= season holds through the reset.
+    for (const t of [T0 + H - 1, T0 + H, T0 + H + 1, T0 + H + 60_000]) {
+      expect(museAllPoints(p, t)).toBeGreaterThanOrEqual(museSeasonPoints(p, t));
     }
     expect(museSeasonPoints(p, T0 + H)).toBeLessThan(museSeasonPoints(p, T0 + H - 1));
+    expect(museAllPoints(p, T0 + H)).toBeLessThan(museAllPoints(p, T0 + H - 1)); // bounded daily restart
+    // conserved: a year later the all-time points are still in the same band, not grown without bound
+    expect(museAllPoints(p, T0 + 365 * H)).toBeLessThan(museAllPoints(p, T0) + 4 * 5_000_000);
   });
 
   it('the browser script carries the same model and escapes "<"', () => {

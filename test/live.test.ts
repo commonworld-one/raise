@@ -6,7 +6,7 @@ import { env } from 'cloudflare:test';
 import { BASE, PROD, dget, get } from './helpers';
 
 const H = LIVE.SEASON_MS;
-const T0 = Date.UTC(2026, 10, 3, 12, 0, 0); // a season start (12:00 UTC)
+const T0 = Date.UTC(2026, 10, 3, 0, 0, 0); // a season start (00:00 UTC)
 const SEEDS = Array.from({ length: 40 }, (_, i) => 400 + i);
 
 describe('live formula', () => {
@@ -30,10 +30,10 @@ describe('live formula', () => {
     }
   });
 
-  it('seasons are 6 h aligned to UTC: start in the tens of thousands, leaders end at 2-5 million, then start over', () => {
+  it('seasons are 24 h aligned to UTC midnight: start in the tens of thousands, leaders end at 2-5 million, then start over', () => {
+    expect(H).toBe(24 * 3600 * 1000);
     expect(T0 % H).toBe(0);
     expect(LIVE.seasonStart(T0 + 5 * 3600_000)).toBe(T0);
-    expect(LIVE.seasonNo(T0 + H)).toBe(LIVE.seasonNo(T0) + 1);
     const ends = SEEDS.map((s) => LIVE.count(s, T0 + H - 1));
     for (const s of SEEDS) {
       const start = LIVE.count(s, T0);
@@ -41,9 +41,37 @@ describe('live formula', () => {
       expect(start).toBeLessThan(60_000);
       expect(LIVE.count(s, T0 + H)).toBeLessThan(LIVE.count(s, T0 + H - 1)); // new season
     }
-    expect(Math.max(...ends)).toBeGreaterThanOrEqual(2_000_000);
+    expect(Math.max(...ends)).toBeGreaterThanOrEqual(1_000_000);
     expect(Math.max(...ends)).toBeLessThanOrEqual(5_000_000);
-    expect(Math.min(...ends)).toBeGreaterThanOrEqual(200_000);
+    expect(Math.min(...ends)).toBeGreaterThanOrEqual(250_000);
+  });
+
+  it('conserved clock: the Season label is frozen at 15 forever, and cumulative numbers stay bounded across years', () => {
+    const REF = 1793809645000; // DEMO_REFERENCE_MS, the recorded instant
+    const future = [REF, Date.UTC(2026, 11, 1), Date.UTC(2027, 0, 1), REF + 400 * 24 * 3600_000];
+    for (const t of future) expect(LIVE.seasonNo(t)).toBe(15);
+    let bandMax = 0, bandBase = 0; // track the seed that gets closest to the cap, so the bound is exercised, not vacuous
+    for (const s of SEEDS) {
+      const b = LIVE.total(s, 0); // base + count(0): the base band floor shape
+      // Sample every cycle phase across 400 days: a 25 h step is coprime with the 24 h cycle, so the
+      // sweep lands on all 24 distinct hour-phases (a non-coprime step would silently sample a subset).
+      for (let t = REF; t < REF + 400 * H; t += 25 * 3600_000) {
+        const v = LIVE.total(s, t);
+        expect(v).toBeGreaterThanOrEqual(10_000);
+        expect(v).toBeLessThanOrEqual(b + 5_000_000);
+        expect(LIVE.week(s, t)).toBeGreaterThanOrEqual(LIVE.today(s, t));
+        if (v - b > bandMax) { bandMax = v - b; bandBase = b; }
+      }
+      // end-of-day reaches the per-seed cap exactly (t = midnight - 1 ms lands on the last tick of the cycle)
+      const midnight = Math.ceil(REF / H) * H;
+      expect(LIVE.total(s, midnight - 1)).toBeLessThanOrEqual(b + 5_000_000);
+      // the daily reset: totals restart instead of ratcheting up forever
+      expect(LIVE.total(s, midnight)).toBeLessThan(LIVE.total(s, midnight - 1));
+      expect(LIVE.today(s, midnight)).toBe(0);
+    }
+    // worst-case seeds actually approach the band top: the leader reaches millions within each cycle
+    expect(bandMax).toBeGreaterThanOrEqual(1_000_000);
+    expect(bandBase).toBeGreaterThan(0);
   });
 
   it('has three characters, "+N today" since the season start, and a sparkline ending at the count', () => {

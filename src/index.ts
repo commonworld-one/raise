@@ -70,7 +70,7 @@ declare module './types' {
 
 async function route(req: Request, env: Env, u: URL, ip: string): Promise<Response> {
   const path = u.pathname;
-  const demo = isDemoHost(env, u.hostname);
+ const demo = isDemoHost(env, u.hostname);;
   // /demo on the demo host is the "See it in action" page (the story and the phone + terminal stage).
   // On the product host /demo goes to the demo home, and /demo/... to the same path on the demo host.
   // On the demo host, old /demo/... links drop the prefix. 301 for reads, 308 for writes so API/MCP POSTs keep their method.
@@ -185,7 +185,8 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   if (m) {
     const n = page(m[1]);
     const twin = m[2] === '.json' ? 'json' : m[2] === '.md' ? 'md' : 'html';
-    const r = await listMuses(ctx.db, { ...museParams(queryObj(u)), page: n }, ctx.now);
+    // Season reads use ageNow: the demo host stays in its pinned recording month, the product (ageNow == now) is unchanged.
+    const r = await listMuses(ctx.db, { ...museParams(queryObj(u)), page: n }, ctx.ageNow);
     if (n > 1 && !r.items.length) return notFound(ctx, twin);
     if (twin === 'md') return cached(md(V.museListMd(ctx, r)));
     if (m[2] === '.json') return cached(json(pageJson(ctx, r, (x) => museJson(ctx, x), r.hasMore ? `${ctx.origin}${ctx.base}/muses/page/${n + 1}.json${u.search}` : null, { list: 'muses' })));
@@ -196,7 +197,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   m = /^\/m\/([a-z0-9_-]{1,40})(?:\/page\/(\d+))?(\/|\.json|\.md)?$/.exec(path);
   if (m) {
     // The seven characters always have a profile, with zero numbers when the database has no row (product).
-    const muse = (await getPublicMuse(ctx.db, m[1]!, ctx.now)) ?? characterMuse(m[1]!); // a draft is a 404
+    const muse = (await getPublicMuse(ctx.db, m[1]!, ctx.ageNow)) ?? characterMuse(m[1]!); // a draft is a 404
     if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     const twin = m[3] === '.json' ? 'json' : m[3] === '.md' ? 'md' : 'html';
     if (!muse) return notFound(ctx, twin);
@@ -242,8 +243,9 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
   }
 
   if (path === '/corporation') {
-    const all = await seasons(ctx.db, ctx.now);
-    const live = seasonOf(ctx.now);
+    // Season reads use ageNow: the demo host stays in its pinned recording month, the product (ageNow == now) is unchanged.
+    const all = await seasons(ctx.db, ctx.ageNow);
+    const live = seasonOf(ctx.ageNow);
     const season = all.includes(u.searchParams.get('season') || '') ? u.searchParams.get('season')! : live;
     const lb = await leaderboard(ctx.db, season);
     const hall = [];

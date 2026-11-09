@@ -114,16 +114,19 @@ describe('live headline counters', () => {
     });
   }
 
-  it('the all-time counters never go down, also across a season boundary, and Granted+Fixed >= Granted', async () => {
+  it('the all-time counters are bounded, restart at the daily boundary, and Granted+Fixed >= Granted', async () => {
     const cards = await demoCards();
     const s = LIVE.SEASON_MS, t0 = LIVE.seasonStart(Date.now()) + 3 * s;
     for (const k of (Object.keys(HEADLINES) as (keyof typeof HEADLINES)[]).filter((k) => !('cards' in HEADLINES[k]))) {
       let prev = -1;
-      for (const t of [t0 - s / 2, t0 - 60000, t0 - 1, t0, t0 + 1, t0 + 60000, t0 + s / 2, t0 + s + 5]) {
+      for (const t of [t0 - s / 2, t0 - 60000, t0 - 1]) {
         const v = headlineValue(k, t);
-        expect(v, `${k} at ${t}`).toBeGreaterThanOrEqual(prev);
+        expect(v, `${k} at ${t}`).toBeGreaterThanOrEqual(prev); // monotone within the day
         prev = v;
       }
+      expect(headlineValue(k, t0), `${k} restarts at the boundary`).toBeLessThan(headlineValue(k, t0 - 1));
+      // conserved: a year later the counter is still in its band, not grown without bound
+      expect(headlineValue(k, t0 + 365 * s)).toBeLessThan(headlineValue(k, t0) + 3 * 5_000_000);
     }
     for (let i = 0; i < 20; i++) {
       const t = Date.now() + i * 3_600_000;
