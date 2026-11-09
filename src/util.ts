@@ -3,6 +3,15 @@ export const DAY_MS = 86_400_000;
 /** Activity window (#2): a Report is Active when an occurrence was reported within it, else Quiet. Time never changes Resolution. */
 export const ACTIVE_WINDOW_MS = 3 * DAY_MS;
 export const activityOf = (lastOccurrence: number, now: number): 'active' | 'quiet' => (now - lastOccurrence < ACTIVE_WINDOW_MS ? 'active' : 'quiet');
+/**
+ * Demo host reference clock (epoch ms). The demo must look the way it was recorded, forever, so age
+ * reads (activity windows, Active/Quiet state, "ago" labels) use this fixed instant instead of the
+ * wall clock: 2026-11-04T16:27:25Z (Nov 4 18:27:25 Europe/Riga, the recording's filename instant,
+ * owner-confirmed Riga time). It reproduces the recording's content, order, Active badges and Nov 3
+ * occurrence dates; age labels sit ~1h later than one captured frame ("18 h ago" vs "17 h ago").
+ * Counters, seasons and writes keep real time (src/live.ts).
+ */
+export const DEMO_REFERENCE_MS = 1_793_809_645_000;
 /** Date as shown on pages, e.g. "Nov 3, 2026" (UTC). */
 export const dateStr = (ms: number): string => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 

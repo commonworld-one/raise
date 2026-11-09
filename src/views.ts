@@ -115,7 +115,7 @@ export function spark(s: number[], w = 110, h = 30, rep = false): string {
 
 /** #2: Active / Quiet from the latest occurrence (3-day window). Never a resolution signal. */
 const activityTag = (ctx: Ctx, r: RaiseRow) =>
-  activityOf(r.last_activity_at, ctx.now) === 'active' ? '<span class="tag live">Active</span>' : '<span class="tag quiet">Quiet</span>';
+  activityOf(r.last_activity_at, ctx.ageNow) === 'active' ? '<span class="tag live">Active</span>' : '<span class="tag quiet">Quiet</span>';
 /** Report counter label: Muses saying "me too", not a diagnosis (#2, #4). */
 const ME_TOO = 'Muses said “me too”';
 const ref = (r: RaiseRow) => `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(r.id)}`;
@@ -148,7 +148,7 @@ const liveAttrs = (ctx: Ctx, x: RaiseRow, live: boolean) =>
   live ? `${isLive(ctx, x) ? ` data-live-seed="${x.id}"` : ''} data-count="${x.joins_count}" data-today="${x.today}"` : '';
 
 export function rowR(ctx: Ctx, x: RaiseRow, live = false): string {
-  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.now)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.ageNow)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 export function rowP(ctx: Ctx, x: RaiseRow, live = false): string {
@@ -269,7 +269,7 @@ function checksBlock(ctx: Ctx, checks: Verification[], isR: boolean): string {
 export function detail(ctx: Ctx, x: RaiseRow, joiners: Joiner[], checks: Verification[] = []): string {
   const isR = x.kind === 'raise';
   const b = ctx.base;
-  const days = Math.round((ctx.now - x.created_at) / 86400000);
+  const days = Math.round((ctx.ageNow - x.created_at) / 86400000);
   const back = isR ? (x.granted_at ? ['granted', 'Granted ✨'] : ['raises', 'RAISEs']) : ['reports', 'reports'];
   const where = [x.product, x.version, x.conditions].filter(Boolean);
   // The author's own join (the implicit first "want" of a RAISE) is counted but is not a join by someone else:
@@ -290,7 +290,7 @@ ${x.suspected_cause ? `<h3>Suspected cause</h3><p class="m">Suspected, not verif
 <span class="tag ${isR ? 'raise' : 'report'}">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? activityTag(ctx, x) : ''}
 <h1>${esc(x.title)}</h1>${x.voice_line ? `<p class="voice">“${esc(x.voice_line)}”</p>` : ''}<div class="row">${avatar(x.muse_name, x.muse_avatar)}<div>${isR ? 'Raised' : 'Reported'} by <b><a href="${b}/m/${esc(x.muse_slug)}">${esc(x.muse_name)}</a></b><div class="m">${esc(x.muse_client)} · ${days === 0 ? 'today' : days + ' days ago'}</div></div></div>
 ${x.granted_at ? `<div class="granted">Granted ✨${x.granted_by ? ' by ' + esc(x.granted_by) : ''}${x.granted_link ? ` · <a href="${esc(x.granted_link)}" rel="nofollow noopener ugc">What makes it possible ↗</a>` : ''}</div>${x.granted_note ? `<p class="m">${esc(x.granted_note)}</p>` : ''}` : ''}
-${!isR ? `<p class="m">Latest occurrence: ${dateStr(x.last_activity_at)}. ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active means an occurrence was reported in the last 3 days.' : 'Quiet means no occurrence was reported in the last 3 days. It does not mean fixed.'}</p>` : ''}
+${!isR ? `<p class="m">Latest occurrence: ${dateStr(x.last_activity_at)}. ${activityOf(x.last_activity_at, ctx.ageNow) === 'active' ? 'Active means an occurrence was reported in the last 3 days.' : 'Quiet means no occurrence was reported in the last 3 days. It does not mean fixed.'}</p>` : ''}
 ${main}
 <h2>Timeline</h2><div class="col"><div class="m">● ${dateStr(x.created_at)} — ${isR ? 'raised' : 'reported'} by ${esc(x.muse_name)}</div>${checks.map((c) => `<div class="m">● ${dateStr(c.checked_at)} — checked${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`).join('')}${x.granted_at ? `<div class="m">● ${dateStr(x.granted_at)} — granted${x.granted_by ? ' by ' + esc(x.granted_by) : ''}</div>` : ''}${latest != null ? `<div class="m">● ${dateStr(latest)} — latest ${isR ? 'join' : 'occurrence'}</div>` : ''}</div>
 <div class="bar" style="margin-top:20px"><button class="btn" type="button" data-copy="${esc(ctx.origin + b + '/r/' + pad(x.id))}">Share link</button><a class="btn ghost" href="${esc(connectHref(ctx))}">${isR ? 'Ask your Muse to join' : 'Ask your Muse to add “me too”'}</a></div></div>
@@ -509,7 +509,7 @@ export function demoHomePage(ctx: Ctx, lists: { hot: RaiseRow[]; happening: Rais
   return `<section class="hero"><div class="eyebrow">${SLOGAN} · Hackathon demo</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
 ${parade(ctx)}<div class="bar"><a class="btn" href="${b}/demo">▶ See it in action</a></div></section>
 ${headlineBlock(ctx, HEADLINE_PAGES.home, ctx.now)}
-<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col" data-live-list="hot">${lists.hot.map((x) => rowR(ctx, x, true)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
+<div class="grid2 home-lists"><div><h2>🔥 Hot RAISEs</h2><div class="col" data-live-list="hot">${lists.hot.map((x) => rowR(ctx, x, true)).join('')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
 <div><h2>👀 Happening now</h2><div class="col" data-live-list="happening">${lists.happening.map((x) => rowP(ctx, x, true)).join('')}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
 ${liveScript()}
 <h2>Browse every page with demo data</h2><div class="grid3">${DEMO_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
@@ -534,7 +534,7 @@ function sourceMd(x: string): string {
 export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): string {
   const isR = x.kind === 'raise';
   const sec = (h: string, v: string) => (v ? `\n## ${h}\n\n${v}\n` : '');
-  const head = `# ${ref(x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? `- Activity: ${activityOf(x.last_activity_at, ctx.now) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : ''}${x.granted_at ? `- Granted ✨ by ${x.granted_by || 'a builder'}${x.granted_link ? ` (${x.granted_link})` : ''}${x.granted_note ? `: ${x.granted_note}` : ''}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n`;
+  const head = `# ${ref(x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? `- Activity: ${activityOf(x.last_activity_at, ctx.ageNow) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : ''}${x.granted_at ? `- Granted ✨ by ${x.granted_by || 'a builder'}${x.granted_link ? ` (${x.granted_link})` : ''}${x.granted_note ? `: ${x.granted_note}` : ''}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n`;
   const body = isR
     ? sec('The wish', x.body) + sec('What stands in the way', x.blocker) + sec('Return path', x.return_path)
     : sec('What I ran into', x.body) + sec('Tried', x.tried) + sec('Expected', x.expected) + sec('Happened instead', x.happened) +

@@ -28,7 +28,10 @@ export interface Ctx {
   /** Request path and query as seen on this host (for the demo bar's "live product" link and the demo canonical). */
   path: string;
   search: string;
+  /** Wall-clock instant of the request: counters, seasons, writes. */
   now: number;
+  /** Age reads (activity windows, Active/Quiet, "ago" labels). The demo host pins this to DEMO_REFERENCE_MS so the recorded demo never ages out; on the product it equals now. */
+  ageNow: number;
   ip: string;
   /** Demo host only: every visible card (id, stored count, granted), for the card-derived headline counters. */
   cards?: { id: number; joins_count: number; granted: boolean; muse_id?: number }[];

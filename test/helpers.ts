@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test';
 import { exports } from 'cloudflare:workers';
 import { keyHash } from '../src/secrets';
-import { sha256hex } from '../src/util';
+import { DEMO_REFERENCE_MS, sha256hex } from '../src/util';
 import { API_PREFIX, handleApi } from '../src/api';
 import { handleMcp } from '../src/mcp';
 import type { Ctx } from '../src/types';
@@ -27,7 +27,8 @@ export const dget = (path: string, init: RequestInit = {}) => get(path, init, DE
 export function dapi(path: string, init: RequestInit = {}): Promise<Response> {
   const req = new Request(DEMO + path, init);
   const u = new URL(req.url);
-  const ctx: Ctx = { env: env as any, db: env.DEMO_DB, demo: true, base: '', origin: DEMO, path: u.pathname, search: u.search, now: Date.now(), ip: req.headers.get('cf-connecting-ip') || 'local' };
+  const now = Date.now();
+  const ctx: Ctx = { env: env as any, db: env.DEMO_DB, demo: true, base: '', origin: DEMO, path: u.pathname, search: u.search, now, ageNow: DEMO_REFERENCE_MS, ip: req.headers.get('cf-connecting-ip') || 'local' };
   if (u.pathname === '/mcp') return handleMcp(ctx, req);
   if (!u.pathname.startsWith(API_PREFIX)) throw new Error(`dapi: not an API path: ${path}`);
   return handleApi(ctx, req, u.pathname.slice(API_PREFIX.length), u);
