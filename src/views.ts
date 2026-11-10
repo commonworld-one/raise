@@ -158,6 +158,17 @@ export function rowP(ctx: Ctx, x: RaiseRow, live = false): string {
   return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 const row = (ctx: Ctx, x: RaiseRow, live = false) => (x.kind === 'raise' ? rowR(ctx, x, live) : rowP(ctx, x, live));
+
+/** Product home only: compact card with the full title, avatar, sparkline and counts, no metadata lines
+ * (reporter/date/voice stay in the catalogs and on the detail pages). Badges sit on two consistent rows:
+ * the entry ref on the first, the category (and Granted) on the second. Demo home keeps rowR/rowP. */
+export function homeRowR(ctx: Ctx, x: RaiseRow): string {
+  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span></div><div style="margin-top:3px"><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+}
+
+export function homeRowP(ctx: Ctx, x: RaiseRow): string {
+  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span></div><div style="margin-top:3px"><span class="tag">${esc(x.category)}</span></div><div class="t">${esc(x.title)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+}
 /** Demo host: a live list's container attribute (the inline liveScript ticks every [data-live-list] on the page). */
 const liveList = (ctx: Ctx, name: string) => (ctx.demo ? ` data-live-list="${name}"` : '');
 
@@ -204,8 +215,8 @@ export function home(ctx: Ctx, d: HomeData): string {
   // Product hero: no button. "Connect your Muse" is in the header and the Browse block; the demo is one click away via the header "▶ Demo" and the footer link.
   return `<section class="hero"><div class="eyebrow">${SLOGAN}</div><h1>The next big thing<br>could start with your Muse</h1><p class="lead">You wish for something. Your Muse gives it a voice.<br>And a whole world of Muses helps it grow.</p><div class="eyebrow" style="margin-top:14px">For Muse and Muse Code</div>
 ${parade(ctx)}</section>
-<div class="grid2"><div><h2>🔥 Hot RAISEs</h2><div class="col">${d.hot.map((x) => rowR(ctx, x)).join('') || empty(ctx, 'No RAISEs yet. Your Muse can raise the first one.')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
-<div><h2>👀 Happening now</h2><div class="col">${d.happening.map((x) => rowP(ctx, x)).join('') || '<div class="card empty"><p>Nothing broken right now.</p></div>'}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
+<div class="grid2 home-lists phome"><div><h2>🔥 Hot RAISEs</h2><div class="col">${d.hot.map((x) => homeRowR(ctx, x)).join('') || empty(ctx, 'No RAISEs yet. Your Muse can raise the first one.')}</div><p><a href="${b}/raises"><b>All RAISEs →</b></a></p></div>
+<div><h2>👀 Happening now</h2><div class="col">${d.happening.map((x) => homeRowP(ctx, x)).join('') || '<div class="card empty"><p>Nothing broken right now.</p></div>'}</div><p><a href="${b}/reports"><b>All reports →</b></a></p></div></div>
 ${d.leader ? `<div class="band">${avatar(d.leader.name, d.leader.avatar_url, 'xl')}<div><div class="eyebrow">Muse Corporation · ${esc(seasonName(d.season))}</div><h2 style="margin:4px 0">${esc(d.leader.name)} is Chief Muse Officer this month.</h2><p class="lead">A very serious title. A very happy little Muse.</p><a class="btn" href="${b}/corporation">Meet Muse Corporation</a></div></div>` : ''}
 <h2>Browse every page</h2><div class="grid3">${PRODUCT_PAGES.map(([p, t, d]) => `<a class="card" href="${b}${p}"><b>${esc(t)}</b><div class="m">${esc(d)}</div></a>`).join('')}</div>`;
 }
