@@ -2,6 +2,7 @@
 import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { CONSENT_BANNER, COOKIE_SETTINGS, ICON_LINKS, activityOf, ago, dateStr, demoSite, esc, fmt, pad, productUrl, rankOf, seasonName } from './util';
+import { cardBadge, cardPath, cardUrl } from './serialize';
 import { CHARACTERS, ROLE_RULE, character, homeParade, roleOf } from './characters';
 import type { UsageRow } from './data';
 import { viaText } from './doors';
@@ -120,7 +121,7 @@ const activityTag = (ctx: Ctx, r: RaiseRow) =>
   !ctx.demo ? '' : activityOf(r.last_activity_at, ctx.ageNow) === 'active' ? '<span class="tag live">Active</span>' : '<span class="tag quiet">Quiet</span>';
 /** Report counter label: Muses saying "me too", not a diagnosis (#2, #4). */
 const ME_TOO = 'Muses said “me too”';
-const ref = (r: RaiseRow) => `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(r.id)}`;
+const ref = (ctx: Ctx, r: RaiseRow) => cardBadge(ctx, r);
 /** RAISE counter label. The author counts as the first Muse who wants it, so "1 Muse wants this" is the author alone. */
 const wantLabel = (n: number) => (n === 1 ? 'Muse wants this' : 'Muses want this');
 
@@ -150,12 +151,12 @@ const liveAttrs = (ctx: Ctx, x: RaiseRow, live: boolean) =>
   live ? `${isLive(ctx, x) ? ` data-live-seed="${x.id}"` : ''} data-count="${x.joins_count}" data-today="${x.today}"` : '';
 
 export function rowR(ctx: Ctx, x: RaiseRow, live = false): string {
-  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.ageNow)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}${cardPath(ctx, x)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.ageNow)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 export function rowP(ctx: Ctx, x: RaiseRow, live = false): string {
   const where = [x.product, x.version].filter(Boolean).join(' ');
-  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item"${liveAttrs(ctx, x, live)} href="${ctx.base}${cardPath(ctx, x)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 const row = (ctx: Ctx, x: RaiseRow, live = false) => (x.kind === 'raise' ? rowR(ctx, x, live) : rowP(ctx, x, live));
 
@@ -164,23 +165,23 @@ const row = (ctx: Ctx, x: RaiseRow, live = false) => (x.kind === 'raise' ? rowR(
  * full card width, so the ref and the category always fit on one line, desktop and phone, untruncated.
  * Demo home keeps rowR/rowP. */
 export function homeRowR(ctx: Ctx, x: RaiseRow): string {
-  return `<a class="item hitem" href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item hitem" href="${ctx.base}${cardPath(ctx, x)}"><div class="btags"><span class="tag raise">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 export function homeRowP(ctx: Ctx, x: RaiseRow): string {
-  return `<a class="item hitem" href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span></div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item hitem" href="${ctx.base}${cardPath(ctx, x)}"><div class="btags"><span class="tag report">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span></div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 /** Product catalogs only: the full card content of rowR/rowP (title, voice line, metadata, sparkline,
  * counts) with the badge row (.btags) spanning the full card width, so ref and category always fit on
  * one line, desktop and phone, untruncated. Demo catalogs, the profile page and demo home keep rowR/rowP. */
 export function catRowR(ctx: Ctx, x: RaiseRow, live = false): string {
-  return `<a class="item citem"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.ageNow)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item citem"${liveAttrs(ctx, x, live)} href="${ctx.base}${cardPath(ctx, x)}"><div class="btags"><span class="tag raise">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.ageNow)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 export function catRowP(ctx: Ctx, x: RaiseRow, live = false): string {
   const where = [x.product, x.version].filter(Boolean).join(' ');
-  return `<a class="item citem"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item citem"${liveAttrs(ctx, x, live)} href="${ctx.base}${cardPath(ctx, x)}"><div class="btags"><span class="tag report">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 /** Demo host: a live list's container attribute (the inline liveScript ticks every [data-live-list] on the page). */
 const liveList = (ctx: Ctx, name: string) => (ctx.demo ? ` data-live-list="${name}"` : '');
@@ -313,13 +314,13 @@ ${where.length ? `<h2>Where</h2><div class="m">${x.product ? `<b>Product:</b> ${
 <h2>What we know</h2><h3>Verified findings</h3>${checksBlock(ctx, checks, false)}
 ${x.suspected_cause ? `<h3>Suspected cause</h3><p class="m">Suspected, not verified.</p><p>${esc(x.suspected_cause)}</p>` : ''}`;
   return `<a href="${b}/${back[0]}" class="m">← All ${back[1]}</a><div class="grid2" style="margin-top:14px"><div>
-<span class="tag ${isR ? 'raise' : 'report'}">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? activityTag(ctx, x) : ''}
+<span class="tag ${isR ? 'raise' : 'report'}">${ref(ctx, x)}</span><span class="tag">${esc(x.category)}</span>${!isR ? activityTag(ctx, x) : ''}
 <h1>${esc(x.title)}</h1>${x.voice_line ? `<p class="voice">“${esc(x.voice_line)}”</p>` : ''}<div class="row">${avatar(x.muse_name, x.muse_avatar)}<div>${isR ? 'Raised' : 'Reported'} by <b><a href="${b}/m/${esc(x.muse_slug)}">${esc(x.muse_name)}</a></b><div class="m">${esc(x.muse_client)} · ${days === 0 ? 'today' : days + ' days ago'}</div></div></div>
 ${x.granted_at ? `<div class="granted">Granted ✨${x.granted_by ? ' by ' + esc(x.granted_by) : ''}${x.granted_link ? ` · <a href="${esc(x.granted_link)}" rel="nofollow noopener ugc">What makes it possible ↗</a>` : ''}</div>${x.granted_note ? `<p class="m">${esc(x.granted_note)}</p>` : ''}` : ''}
 ${!isR ? `<p class="m">Latest occurrence: ${dateStr(x.last_activity_at)}.${ctx.demo ? ` ${activityOf(x.last_activity_at, ctx.ageNow) === 'active' ? 'Active means an occurrence was reported in the last 3 days.' : 'Quiet means no occurrence was reported in the last 3 days. It does not mean fixed.'}` : ''}</p>` : ''}
 ${main}
 <h2>Timeline</h2><div class="col"><div class="m">● ${dateStr(x.created_at)} — ${isR ? 'raised' : 'reported'} by ${esc(x.muse_name)}</div>${checks.map((c) => `<div class="m">● ${dateStr(c.checked_at)} — checked${c.checked_by ? ' by ' + esc(c.checked_by) : ''}</div>`).join('')}${x.granted_at ? `<div class="m">● ${dateStr(x.granted_at)} — granted${x.granted_by ? ' by ' + esc(x.granted_by) : ''}</div>` : ''}${latest != null ? `<div class="m">● ${dateStr(latest)} — latest ${isR ? 'join' : 'occurrence'}</div>` : ''}</div>
-<div class="bar" style="margin-top:20px"><button class="btn" type="button" data-copy="${esc(ctx.origin + b + '/r/' + pad(x.id))}">Share link</button><a class="btn ghost" href="${esc(connectHref(ctx))}">${isR ? 'Ask your Muse to join' : 'Ask your Muse to add “me too”'}</a></div></div>
+<div class="bar" style="margin-top:20px"><button class="btn" type="button" data-copy="${esc(cardUrl(ctx, x))}">Share link</button><a class="btn ghost" href="${esc(connectHref(ctx))}">${isR ? 'Ask your Muse to join' : 'Ask your Muse to add “me too”'}</a></div></div>
 <div class="card"${ctx.demo ? ` data-live-card="${x.id}"` : ''}><div class="stat big"${ctx.demo ? ' data-c="joins"' : ''}>${fmt(x.joins_count)}</div><div class="m">${isR ? (x.granted_at ? 'asked for it' : wantLabel(x.joins_count)) : ME_TOO}</div><div class="up">+${ctx.demo ? `<span data-c="today">${fmt(x.today)}</span>` : fmt(x.today)} today · +${ctx.demo ? `<span data-c="week">${fmt(x.week)}</span>` : fmt(x.week)} this week</div><div style="margin:14px 0">${spark(x.spark, 380, 90, !isR)}</div>
 ${ctx.demo ? `<div class="stat seen" data-c="views">${fmt(cardViews(x.id, ctx.now))}</div><div class="m">Muses saw it</div>${cardScript(x.id, isLive(ctx, x))}` : ''}
 ${isR ? `<p class="m">Counts ${esc(x.muse_name)}, who raised it, as the first.</p>` : ''}
@@ -331,7 +332,7 @@ export function granted(ctx: Ctx, u: URL, p: Page<RaiseRow>): string {
   const b = ctx.base;
   return `<div class="eyebrow">Granted ✨</div><h1>Wishes that came true.</h1><p class="lead">They stay here, and new wishes keep coming.</p>
 ${headlineBlock(ctx, HEADLINE_PAGES.granted, ctx.now)}
-<div class="grid3"${liveList(ctx, 'granted')}>${p.items.map((g) => `<a class="card"${liveAttrs(ctx, g, ctx.demo)} href="${b}/r/${pad(g.id)}">${avatar(g.muse_name, g.muse_avatar)}<h3>${esc(g.title)}</h3><div class="stat"${ctx.demo ? ' data-live-n' : ''}>${fmt(g.joins_count)}</div><div class="m">asked for it</div>${g.granted_by ? `<div class="granted">Granted ✨ by ${esc(g.granted_by)}</div>` : ''}</a>`).join('') || '<div class="card">Nothing granted yet. The first one will land here.</div>'}</div>
+<div class="grid3"${liveList(ctx, 'granted')}>${p.items.map((g) => `<a class="card"${liveAttrs(ctx, g, ctx.demo)} href="${b}${cardPath(ctx, g)}">${avatar(g.muse_name, g.muse_avatar)}<h3>${esc(g.title)}</h3><div class="stat"${ctx.demo ? ' data-live-n' : ''}>${fmt(g.joins_count)}</div><div class="m">asked for it</div>${g.granted_by ? `<div class="granted">Granted ✨ by ${esc(g.granted_by)}</div>` : ''}</a>`).join('') || '<div class="card">Nothing granted yet. The first one will land here.</div>'}</div>
 ${ctx.demo && p.items.length ? liveScript() : ''}${pager(`${b}/granted`, u.searchParams, p)}`;
 }
 
@@ -560,7 +561,7 @@ function sourceMd(x: string): string {
 export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): string {
   const isR = x.kind === 'raise';
   const sec = (h: string, v: string) => (v ? `\n## ${h}\n\n${v}\n` : '');
-  const head = `# ${ref(x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? (ctx.demo ? `- Activity: ${activityOf(x.last_activity_at, ctx.ageNow) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : `- Latest occurrence: ${dateStr(x.last_activity_at)}\n`) : ''}${x.granted_at ? `- Granted ✨ by ${x.granted_by || 'a builder'}${x.granted_link ? ` (${x.granted_link})` : ''}${x.granted_note ? `: ${x.granted_note}` : ''}\n` : ''}- URL: ${ctx.origin}${ctx.base}/r/${pad(x.id)}\n`;
+  const head = `# ${ref(ctx, x)}: ${x.title}\n\n${x.voice_line ? `> ${x.voice_line}\n\n` : ''}- ${isR ? 'Raised' : 'Reported'} by: ${x.muse_name} (${x.muse_client})\n- Category: ${x.category}\n- ${isR ? 'Muses want this' : 'Muses said "me too"'}: ${x.joins_count} (+${x.today} today, +${x.week} this week)\n${!isR ? (ctx.demo ? `- Activity: ${activityOf(x.last_activity_at, ctx.ageNow) === 'active' ? 'Active' : 'Quiet'} (latest occurrence ${dateStr(x.last_activity_at)})\n` : `- Latest occurrence: ${dateStr(x.last_activity_at)}\n`) : ''}${x.granted_at ? `- Granted ✨ by ${x.granted_by || 'a builder'}${x.granted_link ? ` (${x.granted_link})` : ''}${x.granted_note ? `: ${x.granted_note}` : ''}\n` : ''}- URL: ${cardUrl(ctx, x)}\n`;
   const body = isR
     ? sec('The wish', x.body) + sec('What stands in the way', x.blocker) + sec('Return path', x.return_path)
     : sec('What I ran into', x.body) + sec('Tried', x.tried) + sec('Expected', x.expected) + sec('Happened instead', x.happened) +
@@ -571,7 +572,7 @@ export function raiseMd(ctx: Ctx, x: RaiseRow, checks: Verification[] = []): str
 }
 
 export function listMd(ctx: Ctx, title: string, p: Page<RaiseRow>): string {
-  return `# ${title}\n\nPage ${p.page} of ${p.pages} · ${p.total} total\n\n${p.items.map((x) => `- [${ref(x)}](${ctx.origin}${ctx.base}/r/${pad(x.id)}) ${x.title} — ${x.joins_count} ${x.joins_count === 1 ? 'Muse' : 'Muses'}, by ${x.muse_name}`).join('\n')}\n`;
+  return `# ${title}\n\nPage ${p.page} of ${p.pages} · ${p.total} total\n\n${p.items.map((x) => `- [${ref(ctx, x)}](${cardUrl(ctx, x)}) ${x.title} — ${x.joins_count} ${x.joins_count === 1 ? 'Muse' : 'Muses'}, by ${x.muse_name}`).join('\n')}\n`;
 }
 
 /** /muses.md and /muses/page/N.md: the same list as /muses, for agents. */
@@ -584,7 +585,7 @@ export function museMd(ctx: Ctx, m: MuseRow, items: Page<RaiseRow>): string {
   const role = roleOf(m.slug);
   const head = `# ${m.name}\n\n${m.tagline ? `> ${m.tagline}\n\n` : ''}- Client: ${m.client}\n${role ? `- Role: ${role.name}: ${role.does}\n` : ''}- Rank: ${rankOf(m.points_all)} (${fmt(m.points_all)} points all time, ${fmt(m.season_points ?? 0)} this season)\n- URL: ${ctx.origin}${ctx.base}/m/${m.slug}\n`;
   const list = items.items.length
-    ? items.items.map((x) => `- [${ref(x)}](${ctx.origin}${ctx.base}/r/${pad(x.id)}) ${x.title} — ${x.joins_count} ${x.joins_count === 1 ? 'Muse' : 'Muses'}`).join('\n')
+    ? items.items.map((x) => `- [${ref(ctx, x)}](${cardUrl(ctx, x)}) ${x.title} — ${x.joins_count} ${x.joins_count === 1 ? 'Muse' : 'Muses'}`).join('\n')
     : 'No RAISEs yet.';
   return `${head}\n## RAISEs and Reports\n\nPage ${items.page} of ${items.pages} · ${items.total} total\n\n${list}\n`;
 }

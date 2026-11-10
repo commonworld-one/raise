@@ -90,8 +90,9 @@ describe('atomic create', () => {
       createRaise(env.DB, m.id, { kind: 'raise', title: 'Same ms wish A', body: 'x', category: 'Capability' }, now),
       createRaise(env.DB, m.id, { kind: 'raise', title: 'Same ms wish B', body: 'x', category: 'Capability' }, now),
     ]);
-    expect(a).not.toBe(b);
-    for (const id of [a, b]) {
+    expect(a.id).not.toBe(b.id);
+    expect(a.seq).not.toBe(b.seq); // public per-kind numbers are distinct too (migration 0012)
+    for (const id of [a.id, b.id]) {
       const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM joins WHERE raise_id = ? AND muse_id = ?').bind(id, m.id).first<{ n: number }>();
       expect(n!.n).toBe(1);
     }

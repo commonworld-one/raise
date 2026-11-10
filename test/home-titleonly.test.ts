@@ -7,6 +7,8 @@ import { dget, get, makeMuse, post } from './helpers';
 
 const DAY = 86_400_000;
 const pad4 = (n: number) => String(n).padStart(4, '0');
+/** Public per-kind number of a card (migration 0012). */
+const seqOf = async (id: number) => ((await env.DB.prepare('SELECT seq FROM raises WHERE id = ?').bind(id).first<{ seq: number }>())!).seq;
 
 async function makeEntry(kind: 'raise' | 'report', title: string, ageDays: number): Promise<number> {
   const key = (await makeMuse()).key;
@@ -19,8 +21,8 @@ async function makeEntry(kind: 'raise' | 'report', title: string, ageDays: numbe
 
 describe('product home: compact title cards', () => {
   it('home cards keep ref/category/title/counts but no metadata lines; badges on two rows; stretch + stack classes present', async () => {
-    const raiseId = await makeEntry('raise', 'Compact home raise ht', 2);
-    const reportId = await makeEntry('report', 'Compact home report ht', 1);
+    const raiseSeq = await seqOf(await makeEntry('raise', 'Compact home raise ht', 2));
+    const reportSeq = await seqOf(await makeEntry('report', 'Compact home report ht', 1));
     const t = await (await get('/')).text();
     expect(t).toContain('grid2 home-lists phome'); // demo-style stretch + prod-only earlier stack hook
     const left = t.slice(t.indexOf('🔥 Hot RAISEs'), t.indexOf('👀 Happening now'));
@@ -28,13 +30,13 @@ describe('product home: compact title cards', () => {
     // Full titles and counts stay.
     expect(left).toContain('Compact home raise ht');
     expect(right).toContain('Compact home report ht');
-    expect(left).toContain(`RAISE #${pad4(raiseId)}`);
-    expect(right).toContain(`REPORT #${pad4(reportId)}`);
+    expect(left).toContain(`RAISE #${pad4(raiseSeq)}`);
+    expect(right).toContain(`REPORT #${pad4(reportSeq)}`);
     expect(left).toMatch(/Muses? wants? this/); // singular for a fresh fixture entry
     expect(right).toContain('Muses said “me too”');
     // Badges share one full-width row (.btags): ref span directly followed by the category span, untruncated.
-    expect(left).toMatch(new RegExp(`<div class="btags"><span class="tag raise">RAISE #${pad4(raiseId)}</span><span class="tag">[^<]+</span>`));
-    expect(right).toMatch(new RegExp(`<div class="btags"><span class="tag report">REPORT #${pad4(reportId)}</span><span class="tag">[^<]+</span>`));
+    expect(left).toMatch(new RegExp(`<div class="btags"><span class="tag raise">RAISE #${pad4(raiseSeq)}</span><span class="tag">[^<]+</span>`));
+    expect(right).toMatch(new RegExp(`<div class="btags"><span class="tag report">REPORT #${pad4(reportSeq)}</span><span class="tag">[^<]+</span>`));
     expect(t).toContain('hitem');
     // No metadata lines on home cards.
     for (const col of [left, right]) {
@@ -47,11 +49,11 @@ describe('product home: compact title cards', () => {
   });
 
   it('catalogs and detail pages keep the metadata lines', async () => {
-    const reportId = await makeEntry('report', 'Metadata kept report ht', 1);
+    const reportSeq = await seqOf(await makeEntry('report', 'Metadata kept report ht', 1));
     const reports = await (await get('/reports')).text();
     expect(reports).toContain('latest occurrence');
     expect(reports).toContain('reported by');
-    const detail = await (await get(`/r/${pad4(reportId)}`)).text();
+    const detail = await (await get(`/reports/${pad4(reportSeq)}`)).text(); // canonical per-kind address (migration 0012)
     expect(detail).toContain('reported by');
     const raises = await (await get('/raises')).text();
     expect(raises).toContain('raised by');

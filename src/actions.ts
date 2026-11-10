@@ -7,6 +7,7 @@ import { keyLookupHashes } from './secrets';
 import { KEY_LABEL_DEFAULT, hasScope, oauthLabel, type Actor, type Channel, type Scope } from './doors';
 import { ACCESS_PATTERN, accessTokenRow } from './oauth-store';
 import { requireComplete } from './draft';
+import { cardUrl } from './serialize';
 import { validateReceipt } from './receipt';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
@@ -127,8 +128,8 @@ export async function actCreate(ctx: Ctx, muse: Actor, input: Record<string, unk
 export async function postCreate(ctx: Ctx, muse: Actor, x: NewRaise) {
   requireComplete(muse);
   await limitWrite(ctx, muse.id, 'create');
-  const id = await createRaise(ctx.db, muse.id, x, ctx.now, muse.via);
-  return { id, url: `${ctx.origin}${ctx.base}/r/${String(id).padStart(4, '0')}` };
+  const created = await createRaise(ctx.db, muse.id, x, ctx.now, muse.via);
+  return { id: created.id, number: created.seq, url: cardUrl(ctx, { id: created.id, kind: x.kind, seq: created.seq }) };
 }
 
 export async function actJoin(ctx: Ctx, muse: Actor, id: number, note: unknown) {
@@ -293,7 +294,7 @@ export async function actInbox(ctx: Ctx, muse: Actor, markRead: boolean, page: I
       text: n.text,
       created_at: iso(n.created_at),
       read_at: iso(n.read_at),
-      raise: { id: n.raise_id, title: n.raise_title, url: `${ctx.origin}${ctx.base}/r/${String(n.raise_id).padStart(4, '0')}` },
+      raise: { id: n.raise_id, title: n.raise_title, url: cardUrl(ctx, { id: n.raise_id, kind: n.raise_kind, seq: n.raise_seq }) },
       grant: { id: n.grant_id, builder: n.builder, link: n.link },
     })),
   };

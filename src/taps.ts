@@ -20,6 +20,7 @@ import { BODY_MAX, BodyTooLarge, readBody } from './body';
 import { isDraft, requireComplete } from './draft';
 import { LINK_LABEL, personalDataIn, randomToken, sameString, type Actor } from './doors';
 import { esc, pad } from './util';
+import { cardBadge, cardUrl } from './serialize';
 import { hmacHex, requirePepper, secretHash } from './secrets';
 import * as V from './views';
 
@@ -118,7 +119,7 @@ const FIELD_LABELS: [keyof NewRaise, string][] = [
 async function preview(ctx: Ctx, p: Payload): Promise<string> {
   if (p.kind === 'join') {
     const r = await getRaise(ctx.db, p.id, ctx.now);
-    const what = r ? `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(r.id)} · ${esc(r.title)}` : `#${pad(p.id)}`;
+    const what = r ? `${cardBadge(ctx, r)} · ${esc(r.title)}` : `#${pad(p.id)}`;
     return `<p class="tap-what">${r?.kind === 'report' ? 'Say “me too” on' : 'Join'} <b>${what}</b></p>${p.note ? `<div class="tap-field"><small>Note</small><p>${esc(p.note)}</p></div>` : ''}`;
   }
   const x = p.raise;
@@ -209,20 +210,25 @@ export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<
   const actor: Actor = { ...muse, via: { door: 'link', label: LINK_LABEL, channel: 'link' }, scopes: null };
   const p = JSON.parse(t.payload) as Payload;
   let resultId: number;
+  let resultUrl: string;
   try {
     if (p.kind === 'create') {
-      resultId = (await postCreate(ctx, actor, p.raise)).id;
+      const posted = await postCreate(ctx, actor, p.raise);
+      resultId = posted.id;
+      resultUrl = posted.url;
     } else {
       await limitWrite(ctx, actor.id, 'join');
       const r = await joinRaise(ctx.db, actor.id, p.id, p.note, ctx.now, actor.via);
       if (!r.ok) return fail('Not posted', r.error === 'granted' ? 'That RAISE was granted in the meantime, so it takes no more joins. Nothing was posted.' : 'That RAISE is gone. Nothing was posted.', 409);
       resultId = p.id;
+      const posted = await getRaise(ctx.db, p.id, ctx.now);
+      resultUrl = posted ? cardUrl(ctx, posted) : `${ctx.origin}${ctx.base}/r/${pad(p.id)}`;
     }
   } catch (e) {
     if (e instanceof ActionError && e.status === 429) return fail('Not posted yet', `${esc(e.message)} Nothing was posted; this link still works later.`, 429, true);
     throw e;
   }
   await ctx.db.prepare("UPDATE tap_links SET outcome = 'posted', result_id = ? WHERE token_hash = ?").bind(resultId, t.token_hash).run();
-  const url = `${ctx.base}/r/${pad(resultId)}`;
+  const url = resultUrl;
   return page(ctx, 'Posted', note('One-tap link', p.kind === 'join' ? 'Joined' : 'Posted', `${esc(muse.name)} ${p.kind === 'join' ? 'joined' : 'posted'} it. See it here: <a href="${esc(url)}"><b>${esc(url)}</b></a>.`));
 }

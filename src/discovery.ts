@@ -31,14 +31,15 @@ export function staticPages(ctx: Ctx): string[] {
 export async function sitemapUrls(ctx: Ctx): Promise<{ loc: string; lastmod?: string }[]> {
   const [raises, muses] = await ctx.db.batch<any>([
     // Hidden RAISEs and Reports are left out (their pages are 404).
-    ctx.db.prepare('SELECT id, last_activity_at FROM raises WHERE hidden = 0 ORDER BY last_activity_at DESC, id DESC LIMIT ?').bind(MAX_RAISES),
+    ctx.db.prepare('SELECT id, kind, seq, last_activity_at FROM raises WHERE hidden = 0 ORDER BY last_activity_at DESC, id DESC LIMIT ?').bind(MAX_RAISES),
     // Drafts (no name and avatar yet, src/draft.ts) are left out.
     ctx.db.prepare(`SELECT slug FROM muses m WHERE ${PUBLIC_MUSE_SQL} ORDER BY m.id LIMIT ?`).bind(MAX_MUSES),
   ]);
   const base = ctx.origin + ctx.base;
   const urls: { loc: string; lastmod?: string }[] = staticPages(ctx).map((p) => ({ loc: base + p }));
-  for (const r of raises!.results as { id: number; last_activity_at: number }[])
-    urls.push({ loc: `${base}/r/${pad(r.id)}`, lastmod: dayStr(r.last_activity_at) });
+  for (const r of raises!.results as { id: number; kind: 'raise' | 'report'; seq: number; last_activity_at: number }[])
+    // Product: the canonical per-kind address (migration 0012); the demo keeps its /r/{id} story addresses.
+    urls.push({ loc: ctx.demo ? `${base}/r/${pad(r.id)}` : `${base}/${r.kind === 'raise' ? 'raises' : 'reports'}/${pad(r.seq)}`, lastmod: dayStr(r.last_activity_at) });
   // The seven characters always have a profile (src/characters.ts), with or without a database row.
   const slugs = new Set<string>(CHARACTERS.map((c) => c.slug));
   for (const m of muses!.results as { slug: string }[]) slugs.add(m.slug);

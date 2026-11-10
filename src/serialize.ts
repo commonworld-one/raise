@@ -1,4 +1,4 @@
-import type { Ctx } from './types';
+import type { Ctx, Kind } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
 import { iso, pad, rankOf, snapshotId } from './util';
 import { roleOf } from './characters';
@@ -7,18 +7,30 @@ import { LABEL_SOURCE, viaText, type Door } from './doors';
 import { receiptFields } from './receipt';
 
 export const raiseUrl = (ctx: Ctx, id: number) => `${ctx.origin}${ctx.base}/r/${pad(id)}`;
+
+// Public card identity (migration 0012). The product shows the immutable per-kind number
+// (RAISE #0005 on /raises/0005); the demo host keeps its original id-based story numbers (#0418).
+// The internal integer id stays the technical key everywhere else (API writes, relations).
+export const kindLabel = (kind: Kind) => (kind === 'raise' ? 'RAISE' : 'REPORT');
+export const cardNumber = (ctx: Ctx, r: { id: number; seq?: number | null }) => (ctx.demo ? r.id : (r.seq ?? r.id));
+export const cardBadge = (ctx: Ctx, r: { id: number; kind: Kind; seq?: number | null }) => `${kindLabel(r.kind)} #${pad(cardNumber(ctx, r))}`;
+export const cardRef = (ctx: Ctx, r: { id: number; kind: Kind; seq?: number | null }) => `${kindLabel(r.kind)}-${pad(cardNumber(ctx, r))}`;
+export const cardPath = (ctx: Ctx, r: { id: number; kind: Kind; seq?: number | null }) =>
+  ctx.demo ? `/r/${pad(r.id)}` : `/${r.kind === 'raise' ? 'raises' : 'reports'}/${pad(cardNumber(ctx, r))}`;
+export const cardUrl = (ctx: Ctx, r: { id: number; kind: Kind; seq?: number | null }) => `${ctx.origin}${ctx.base}${cardPath(ctx, r)}`;
 export const museUrl = (ctx: Ctx, slug: string) => `${ctx.origin}${ctx.base}/m/${slug}`;
 const absAvatar = (ctx: Ctx, a: string | null) => (a ? (a.startsWith('/') ? ctx.origin + a : a) : null);
 
 export function raiseJson(ctx: Ctx, r: RaiseRow) {
   return {
     id: r.id,
-    ref: `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(r.id)}`,
+    // Product: the per-kind number and the typed ref ("RAISE-0005"). The demo keeps its id-based story ref.
+    ...(ctx.demo ? { ref: cardBadge(ctx, r) } : { number: cardNumber(ctx, r), ref: cardRef(ctx, r) }),
     kind: r.kind,
     title: r.title,
     body: r.body,
     category: r.category,
-    url: raiseUrl(ctx, r.id),
+    url: cardUrl(ctx, r),
     muse: { slug: r.muse_slug, name: r.muse_name, client: r.muse_client, avatar_url: absAvatar(ctx, r.muse_avatar), url: museUrl(ctx, r.muse_slug) },
     joins_count: r.joins_count,
     joins_today: r.today,
@@ -107,7 +119,12 @@ export function activityItem(ctx: Ctx, a: ActivityRow) {
   return {
     action: a.action,
     at: iso(a.at),
-    raise: { id: a.raise_id, ref: `${a.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(a.raise_id)}`, title: a.title, url: raiseUrl(ctx, a.raise_id) },
+    raise: {
+      id: a.raise_id,
+      ...(ctx.demo ? { ref: cardBadge(ctx, { id: a.raise_id, kind: a.kind }) } : { number: cardNumber(ctx, { id: a.raise_id, seq: a.raise_seq }), ref: cardRef(ctx, { id: a.raise_id, kind: a.kind, seq: a.raise_seq }) }),
+      title: a.title,
+      url: cardUrl(ctx, { id: a.raise_id, kind: a.kind, seq: a.raise_seq }),
+    },
     via: a.via_door
       ? { door: a.via_door, label: a.via_label, channel: a.via_channel || null, text: viaText(a.via_door, a.via_label, a.via_channel), label_source: LABEL_SOURCE[a.via_door as Door] ?? null }
       : null,
