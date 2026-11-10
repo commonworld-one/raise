@@ -76,6 +76,19 @@ describe('product: Active/Quiet and age-based hiding removed', () => {
     for (const x of p.happening) expect(x.activity).toBeUndefined();
   });
 
+  it('moderation hidden still excludes entries from the full-history lists and home', async () => {
+    const id = await makeEntry('report', 'Moderation hidden daq', 10);
+    await env.DB.prepare('UPDATE raises SET hidden = 1 WHERE id = ?').bind(id).run();
+    const api = (await (await get('/api/v1/reports')).json()) as any;
+    expect(api.items.map((x: any) => x.id)).not.toContain(id);
+    const page = await (await get('/reports')).text();
+    expect(page).not.toContain('Moderation hidden daq');
+    const home = await (await get('/')).text();
+    expect(home).not.toContain('Moderation hidden daq');
+    // Unhide again so later assertions in this file are unaffected.
+    await env.DB.prepare('UPDATE raises SET hidden = 0 WHERE id = ?').bind(id).run();
+  });
+
   it('MCP: search_raises has no active argument, raise_pulse describes newest reports', async () => {
     const l = (await (await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })).json()) as any;
     const search = l.result.tools.find((t: any) => t.name === 'search_raises');
