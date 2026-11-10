@@ -246,7 +246,7 @@ describe('Hot/Rising two-phase differential (full ordered output)', () => {
 });
 
 describe('reportAreas skip-scan', () => {
-  it('matches DISTINCT ground truth: hidden and empty excluded, first 12 ascending', async () => {
+  it('matches DISTINCT ground truth: hidden and empty excluded, all areas ascending (no 12-cap since filter B)', async () => {
     const m = await makeMuse('diffareas');
     const cats = ['AreaB', 'AreaA', 'AreaD', 'AreaC', 'AreaF', 'AreaE', 'AreaH', 'AreaG', 'AreaJ', 'AreaI', 'AreaL', 'AreaK', 'AreaN', 'AreaM'];
     const stmts: any[] = cats.map((c, i) =>
@@ -255,10 +255,13 @@ describe('reportAreas skip-scan', () => {
     stmts.push(env.DB.prepare("INSERT INTO raises (kind, title, category, muse_id, created_at, last_activity_at, joins_count, hidden, seq) VALUES ('report', 'Hidden area report', 'HiddenOnly', ?, ?, ?, 1, 1, 200)").bind(m.id, NOW, NOW));
     stmts.push(env.DB.prepare("INSERT INTO raises (kind, title, category, muse_id, created_at, last_activity_at, joins_count, hidden, seq) VALUES ('report', 'Empty area report', '', ?, ?, ?, 1, 0, 201)").bind(m.id, NOW, NOW));
     await env.DB.batch(stmts);
-    const want = await env.DB.prepare("SELECT DISTINCT category FROM raises WHERE kind = 'report' AND hidden = 0 AND category != '' ORDER BY category LIMIT 12").all<{ category: string }>();
+    const want = await env.DB.prepare("SELECT DISTINCT category FROM raises WHERE kind = 'report' AND hidden = 0 AND category != '' ORDER BY category").all<{ category: string }>();
     const got = await reportAreas(env.DB as any);
     expect(got).toEqual(want.results.map((x) => x.category));
-    expect(got).toHaveLength(12); // 14 distinct + pre-existing reports, capped at 12
+    expect(got.length).toBeGreaterThan(12); // 14 distinct + pre-existing reports, no cap: the selector searches/scrolls them all
+    expect(await reportAreas(env.DB as any, true)).toEqual(got.slice(0, 12)); // demo's recorded cap is conserved
+    expect(got).toContain('AreaN');
+    expect(got).toContain('AreaM');
     expect(got).not.toContain('HiddenOnly');
     expect(got).not.toContain('');
   });
