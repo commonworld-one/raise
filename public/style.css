@@ -195,9 +195,6 @@ table{display:block;overflow-x:auto}}
 .stackph{display:inline-flex;align-items:center;justify-content:center;background:var(--surface);color:var(--mute);font-size:12px;font-weight:600}
 .stackrow{display:inline-flex;align-items:center}
 .textlink{color:var(--acc);font-weight:600;white-space:nowrap}
-.creditband{display:flex;gap:12px;align-items:center;margin:18px 0;padding:14px 18px;border:1px solid var(--why-line);background:var(--why-bg);border-radius:16px;font-size:13.5px;color:var(--why);line-height:1.5}
-.creditband strong{color:var(--ink)}
-.creditband a{font-weight:600}
 .cbicon{flex:none;width:28px;height:28px;border-radius:50%;background:var(--why-line);color:var(--why);display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
 .promptbox{border:1px solid var(--line);border-left:3px solid var(--acc-solid);border-radius:10px;padding:14px 18px;background:var(--surface)}
 .promptlabel{display:flex;justify-content:space-between;align-items:center;gap:10px}

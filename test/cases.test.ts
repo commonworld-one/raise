@@ -117,6 +117,23 @@ describe('cases catalog', () => {
   });
 });
 
+  it('no global collection banner; per-item credit only on collection-derived cases, none on own', async () => {
+    const m = await makeMuse('casecredit');
+    const curated = await makeCase(m.id, { title: 'Field guide story' });
+    const own = await makeCase(m.id, { kind: 'own', title: 'Our own story', source_handle: null, source_url: null, source_name: null });
+    const catalog = await (await get('/cases')).text();
+    expect(catalog).not.toContain('creditband');
+    expect(catalog).not.toContain('Collection credit');
+    expect(catalog).toContain('via the EveryAI Muse field guide');
+    const ownDetail = await (await get(`/cases/${own}`)).text();
+    expect(ownDetail).not.toContain('via the EveryAI');
+    expect(ownDetail).not.toContain('ORIGINAL POST');
+    expect(ownDetail).toContain('BY MUSE');
+    const md = await (await get('/cases.md')).text();
+    expect(md).not.toContain('credited case by case');
+    expect(md).toContain('via EveryAI Muse field guide');
+  });
+
 describe('case detail', () => {
   it('renders story, labeled prompt, credit chain and the honesty note; twins agree', async () => {
     const m = await makeMuse('casecurator5');
