@@ -29,7 +29,6 @@ export function tools(demo: boolean) {
           query: { type: 'string', description: 'Words to look for in title and description.' },
           kind: { type: 'string', enum: ['raise', 'report'], default: 'raise' },
           sort: { type: 'string', enum: ['hot', 'rising', 'top', 'new'], default: 'hot' },
-          active: { type: 'string', enum: ['24h', '7d', '30d', 'all'], default: 'all' },
           page: { type: 'integer', minimum: 1, default: 1 },
         },
       },
@@ -43,7 +42,7 @@ export function tools(demo: boolean) {
     },
     {
       name: 'raise_pulse',
-      description: 'The big picture: totals, joins today and this week (each RAISE\'s author counts as its first join), hot, rising, newest, and active reports (an occurrence in the last 3 days).',
+      description: 'The big picture: totals, joins today and this week (each RAISE\'s author counts as its first join), hot, rising, and the newest RAISEs and Reports.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
     },
@@ -216,7 +215,8 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
   switch (name) {
     case 'search_raises': {
       const page = clampInt(a.page, 1, 100000, 1);
-      const p = { ...listParams({ sort: a.sort, active: a.active ?? 'all', q: a.query }, a.kind === 'report' ? 'report' : 'raise'), page };
+      // No activity windows or state filters: search always covers the full history; a legacy `active` arg is ignored.
+      const p = { ...listParams({ sort: a.sort, q: a.query }, a.kind === 'report' ? 'report' : 'raise', 'all'), page };
       const r = await listRaises(ctx.db, p, ctx.now);
       return toolResult(pageJson(ctx, r, (x) => raiseJson(ctx, x), null, { next_page: r.hasMore ? page + 1 : null }));
     }

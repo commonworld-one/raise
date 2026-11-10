@@ -40,11 +40,15 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications', 'taps', 'me/claim-code', 'me/apps'] });
       if ((seg[0] === 'raises' || seg[0] === 'reports' || seg[0] === 'granted') && seg.length === 1) {
         const kind: Kind = seg[0] === 'reports' ? 'report' : q.kind === 'report' ? 'report' : 'raise';
-        // Granted RAISEs get no new joins, so last_activity_at stops moving: the shelf defaults to all-time.
-        const p = { ...listParams(q, seg[0] === 'granted' ? undefined : kind, seg[0] === 'granted' ? 'all' : '7d'), page, granted: seg[0] === 'granted' };
+        // No activity windows or state filters: the API always returns the full history, and the legacy
+        // active/state query params no longer affect the result. Granted RAISEs get no new joins, so
+        // last_activity_at stops moving: the shelf defaults to all-time.
+        const p = { ...listParams(q, seg[0] === 'granted' ? undefined : kind, 'all'), page, granted: seg[0] === 'granted' };
+        p.active = 'all';
+        p.state = undefined;
         const r = await listRaises(ctx.db, p, ctx.now);
         if (page > 1 && !r.items.length) return json({ error: 'not_found', message: 'Page out of range.' }, { status: 404 });
-        return cached(json(pageJson(ctx, r, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page), { list: seg[0], sort: p.sort, active: p.active })));
+        return cached(json(pageJson(ctx, r, (x) => raiseJson(ctx, x), nextUrl(ctx, u, page), { list: seg[0], sort: p.sort })));
       }
       if (seg[0] === 'raises' && seg.length === 2) {
         const r = await getRaise(ctx.db, Number(seg[1]), ctx.now);

@@ -271,11 +271,13 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
       (SELECT COALESCE(SUM(joins), 0) FROM raise_daily WHERE day >= ?) AS joins_week`).bind(today, d7),
   ]);
   const counts = c!.results[0] as Record<string, number>;
+  // No activity windows or state filters: hot/rising order by their time-decayed formulas over all entries,
+  // and `happening` is the five newest Reports (matching the product home's "Happening now" column).
   const [hot, rising, newest, happening] = await Promise.all([
-    listRaises(db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 5 }, now),
-    listRaises(db, { kind: 'raise', sort: 'rising', active: '7d', perPage: 5 }, now),
+    listRaises(db, { kind: 'raise', sort: 'hot', active: 'all', perPage: 5 }, now),
+    listRaises(db, { kind: 'raise', sort: 'rising', active: 'all', perPage: 5 }, now),
     listRaises(db, { kind: 'raise', sort: 'new', active: 'all', perPage: 5 }, now),
-    listRaises(db, { kind: 'report', sort: 'hot', state: 'active', perPage: 5 }, now),
+    listRaises(db, { kind: 'report', sort: 'new', active: 'all', perPage: 5 }, now),
   ]);
   return { ...(counts as any), hot: hot.items, rising: rising.items, newest: newest.items, happening: happening.items };
 }

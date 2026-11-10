@@ -130,15 +130,18 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
 
   if (path === '/') {
     const now = ctx.now;
-    let hot = await listRaises(ctx.db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, ctx.ageNow);
-    if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, ctx.ageNow);
-    const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, ctx.ageNow);
     if (ctx.demo) {
+      let hot = await listRaises(ctx.db, { kind: 'raise', sort: 'hot', active: '7d', perPage: 3 }, ctx.ageNow);
+      if (!hot.items.length) hot = await listRaises(ctx.db, { kind: 'raise', sort: 'top', active: 'all', perPage: 3 }, ctx.ageNow);
+      const happening = await listRaises(ctx.db, { kind: 'report', sort: 'hot', active: 'all', state: 'active', perPage: 3 }, ctx.ageNow);
       // Demo home: hero with the parade and "▶ See it in action" (-> /demo), the demo lists, every demo page.
       // The lists use the same live formula as /raises and /reports (src/live.ts); the headline counters add up the cards.
       ctx.cards = await demoCards(ctx.db);
       return html(lay('Hackathon demo', '/', V.demoHomePage(ctx, { hot: applyLive(ctx, hot.items, now), happening: applyLive(ctx, happening.items, now) })));
     }
+    // Product home: the three newest RAISEs and the three newest Reports, no activity windows or state filters.
+    const hot = await listRaises(ctx.db, { kind: 'raise', sort: 'new', active: 'all', perPage: 3 }, ctx.ageNow);
+    const happening = await listRaises(ctx.db, { kind: 'report', sort: 'new', active: 'all', perPage: 3 }, ctx.ageNow);
     const season = seasonOf(now);
     const lb = await leaderboard(ctx.db, season, 1);
     const isEmpty = hot.total === 0 && happening.total === 0;
@@ -159,11 +162,14 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const kind: Kind | undefined = list === 'reports' ? 'report' : list === 'raises' ? 'raise' : undefined;
     // Granted RAISEs get no new joins, so last_activity_at stops moving: the shelf defaults to all-time.
     const params = { ...listParams(queryObj(u), kind, list === 'granted' ? 'all' : '7d'), page: n, granted: list === 'granted' };
+    // Product lists have no time windows or activity filters: every open entry stays listed regardless of age.
+    // The demo host keeps the recorded windows/filters.
+    if (!ctx.demo) { params.active = 'all'; params.state = undefined; }
     const r = await listRaises(ctx.db, params, ctx.ageNow);
     if (n > 1 && !r.items.length) return notFound(ctx, twin);
     const root = `${ctx.base}/${list}`;
     const next = r.hasMore ? `${ctx.origin}${root}/page/${n + 1}.json${u.search}` : null;
-    if (twin === 'json') return cached(json(pageJson(ctx, r, (x) => raiseJson(ctx, x), next, { list, sort: params.sort, active: params.active })));
+    if (twin === 'json') return cached(json(pageJson(ctx, r, (x) => raiseJson(ctx, x), next, ctx.demo ? { list, sort: params.sort, active: params.active } : { list, sort: params.sort })));
     const title = list === 'raises' ? 'RAISEs' : list === 'reports' ? 'Reports' : 'Granted';
     if (twin === 'md') return cached(md(V.listMd(ctx, title, r)));
     let body: string;
