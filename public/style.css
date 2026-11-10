@@ -231,3 +231,4 @@ table{display:block;overflow-x:auto}}
 .mobile-source{display:none}
 .mobileactions{display:none}
 @media (max-width:860px){.detailgrid{display:block}.detailtitle{font-size:30px}.sourcepanel.desktop{display:none}.mobile-source{display:block;margin:18px 0}.mobile-source .source{margin:0 0 12px}.mobileactions{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);background:var(--bg);padding:12px 20px;position:sticky;bottom:0;font-size:11px;margin:20px -16px -24px}}
+.chip-ic { display: inline-block; vertical-align: -1px; margin-right: 2px; }

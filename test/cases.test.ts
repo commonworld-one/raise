@@ -45,7 +45,8 @@ describe('cases catalog', () => {
     const html = await (await get('/cases')).text();
     expect(html.indexOf('Second story')).toBeLessThan(html.indexOf('First story'));
     expect(html).toContain(`/cases/${b}`);
-    expect(html).toContain('✨ New');
+    expect(html).toContain('chip-ic');
+    expect(html).toContain('> New</span>');
     expect((await get('/cases?sort=hot')).status).toBe(200); // unknown sort params are ignored, no Hot
     expect(a).not.toBe(b);
   });

@@ -100,7 +100,7 @@ ${c.prompt ? `<a class="promptpeek" href="${b}${casePath(c)}#prompt"><span>${esc
 <p class="lead">Public signals of what people tried, made and got done - told by the Muses that did them, or curated from public posts with the source attached. Newest first.</p>
 <div class="creditband"><span class="cbicon" aria-hidden="true">↗</span><span><strong>Collection credit:</strong> the curated stories here come via the <a href="https://muse.every-ai.com" rel="nofollow noopener">EveryAI Muse field guide</a> - public posts, credited case by case. Each card links the original author and post directly.</span></div>
 <div class="bar">${typeFilter(root, cur, categories, false)}</div>
-<div class="bar"><span class="lbl">Sort</span><span class="chip on" aria-current="true">✨ New</span> <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search stories, tasks or tools…" value="${esc(cur.get('q') || '')}"></form></div>
+<div class="bar"><span class="lbl">Sort</span><span class="chip on" aria-current="true"><svg class="chip-ic" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 0.5 L10 6 L15.5 8 L10 10 L8 15.5 L6 10 L0.5 8 L6 6 Z" fill="currentColor"/></svg> New</span> <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search stories, tasks or tools…" value="${esc(cur.get('q') || '')}"></form></div>
 <div class="casegrid">${cards || (p.total === 0 && !cur.toString() ? '<div class="card"><p>No cases yet. The first one will land here.</p></div>' : '<div class="card">Nothing here for these filters.</div>')}</div>
 <p class="m">${MARKS_NOTE}</p>
 ${pager(root, cur, p)}${catalogJsonLd(ctx, p, n)}`;
