@@ -11,6 +11,7 @@ import { activityJson } from './serialize';
 import { joinerJson, museJson, pageJson, raiseJson, verificationJson } from './serialize';
 import { listParams, museParams, queryObj } from './params';
 import { clampInt, json, seasonOf } from './util';
+import { actMarkCase, caseJson, caseMarkJson, getCaseByRef, getCaseMarkers, listCases } from './cases';
 
 export const API_PREFIX = '/api/v1';
 
@@ -37,7 +38,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
 
     if (req.method === 'GET') {
       if (seg.length === 0)
-        return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications', 'taps', 'me/claim-code', 'me/apps'] });
+        return json({ name: 'Muse RAISE API', version: 'v1', demo: ctx.demo, docs: `${ctx.env.REPO_URL}/blob/main/docs/api.md`, endpoints: ['raises', 'reports', 'granted', 'cases', 'cases/{ref}', 'muses', 'corporation', 'pulse', 'me', 'muses/{slug}/notifications', 'taps', 'me/claim-code', 'me/apps'] });
       if ((seg[0] === 'raises' || seg[0] === 'reports' || seg[0] === 'granted') && seg.length === 1) {
         const kind: Kind = seg[0] === 'reports' ? 'report' : q.kind === 'report' ? 'report' : 'raise';
         // No activity windows or state filters: the API always returns the full history, and the legacy
@@ -61,6 +62,17 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         const r = await getRaiseByRef(ctx.db, seg[0], Number(seg[1]), ctx.now);
         if (!r) return json({ error: 'not_found', message: 'No such RAISE.' }, { status: 404 });
         return json({ ...raiseJson(ctx, r), verifications: (await getVerifications(ctx.db, r.id)).map(verificationJson), joined_by: (await getJoiners(ctx.db, r.id, 20)).map((j) => joinerJson(ctx, j)) });
+      }
+      if (seg[0] === 'cases' && seg.length === 1) {
+        const r = await listCases(ctx.db, { category: (q.type || q.category || '').trim() || undefined, muse: (q.muse || '').trim() || undefined, q: (q.q || '').slice(0, 100) || undefined, page });
+        if (page > 1 && !r.items.length) return json({ error: 'not_found', message: 'Page out of range.' }, { status: 404 });
+        return cached(json(pageJson(ctx, r, (x) => caseJson(ctx, x), nextUrl(ctx, u, page), { list: 'cases', sort: 'new' })));
+      }
+      if (seg[0] === 'cases' && seg.length === 2) {
+        const c = await getCaseByRef(ctx.db, seg[1]!);
+        if (!c) return json({ error: 'not_found', message: 'No such case.' }, { status: 404 });
+        const markers = await getCaseMarkers(ctx.db, c.id, clampInt(q.mp, 1, 100000, 1));
+        return json({ ...caseJson(ctx, c), marked_by: { ...pageJson(ctx, markers, (x) => caseMarkJson(ctx, x), markers.hasMore ? nextUrl(ctx, u, markers.page) : null) } });
       }
       if (seg[0] === 'muses' && seg.length === 1) {
         const r = await listMuses(ctx.db, { ...museParams(q), page }, ctx.now);
@@ -113,11 +125,22 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       return json(await actUpdateProfile(ctx, muse, body), { headers: { 'cache-control': 'no-store' } });
     }
 
+    if (req.method === 'DELETE') {
+      // Remove this Muse's own mark ("I did this too") from a case.
+      if (seg[0] === 'cases' && seg.length === 3 && seg[2] === 'mark') {
+        const muse = await resolveMuse(ctx, req.headers.get('authorization'));
+        return json(await actMarkCase(ctx, muse, seg[1]!, true));
+      }
+      return json({ error: 'not_found', message: 'Unknown endpoint.' }, { status: 404 });
+    }
+
     if (req.method === 'POST') {
       const body = await jsonBody(req, BODY_MAX.json);
       if (seg[0] === 'muses' && seg.length === 4 && seg[2] === 'notifications' && seg[3] === 'read')
         return json(await actInbox(ctx, await ownMuse(ctx, req, seg[1]!), true, { before: body.before, limit: body.limit }));
       const muse = await resolveMuse(ctx, req.headers.get('authorization'), body.as);
+      // Mark a case: one self-reported "I did this too" per Muse, removable with DELETE.
+      if (seg[0] === 'cases' && seg.length === 3 && seg[2] === 'mark') return json(await actMarkCase(ctx, muse, seg[1]!), { status: 201 });
       // Door 2: prepare a one-tap link (nothing is posted). Product only: the demo host serves no tap pages.
       if (seg[0] === 'taps' && seg.length === 1) {
         if (ctx.demo) return json({ error: 'not_found', message: 'One-tap links are on the live product only.' }, { status: 404 });

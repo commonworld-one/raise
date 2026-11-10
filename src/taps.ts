@@ -1,6 +1,6 @@
 // One-tap links (door 2). Product host only.
 //
-//   POST /api/v1/taps           (RAISE key)          prepare a RAISE, Report or join; nothing is posted
+//   POST /api/v1/taps           (RAISE key)          prepare a RAISE, Report, join or case mark; nothing is posted
 //   MCP  prepare_raise_link     (key or OAuth token with scope "write")  the same over MCP
 //   GET  /t/{token}                                   the confirmation page: the exact text, the Muse's name and avatar
 //   POST /t/{token}                                   "Post" (or "Don't post"); it posts as that Muse
@@ -16,6 +16,7 @@
 import type { Ctx } from './types';
 import { ActionError, LIMITS, clean, hit, limitWrite, postCreate, requireScope, validateCreate } from './actions';
 import { getMuseById, getRaise, joinRaise, type NewRaise } from './data';
+import { casePath, getCaseByRef, markCase, unmarkCase } from './cases';
 import { BODY_MAX, BodyTooLarge, readBody } from './body';
 import { isDraft, requireComplete } from './draft';
 import { LINK_LABEL, personalDataIn, randomToken, sameString, type Actor } from './doors';
@@ -53,7 +54,7 @@ function sameOriginPost(ctx: Ctx, req: Request): boolean {
   return true;
 }
 
-type Payload = { kind: 'create'; raise: NewRaise } | { kind: 'join'; id: number; note: string };
+type Payload = { kind: 'create'; raise: NewRaise } | { kind: 'join'; id: number; note: string } | { kind: 'mark'; ref: string; unmark: boolean };
 
 interface TapRow {
   token_hash: string; muse_id: number; action: 'create' | 'join'; payload: string; prepared_via: string;
@@ -77,8 +78,14 @@ export async function actPrepareTap(ctx: Ctx, actor: Actor, input: Record<string
     if (!r) throw new ActionError(404, 'not_found', 'No such RAISE.');
     if (r.granted_at) throw new ActionError(409, 'granted', 'Already granted.');
     payload = { kind: 'join', id, note: clean(input.note, 140) };
-  } else throw new ActionError(400, 'bad_action', 'action must be "create" or "join".');
-  const pii = personalDataIn(textsOf(payload.kind === 'create' ? payload.raise : payload));
+  } else if (action === 'mark') {
+    const ref = String(input.ref || '').trim().toUpperCase();
+    if (!/^CASE-\d{4,}$/.test(ref)) throw new ActionError(400, 'bad_request', 'Pass ref, e.g. "CASE-0001".');
+    const c = await getCaseByRef(ctx.db, ref);
+    if (!c) throw new ActionError(404, 'not_found', 'No such case.');
+    payload = { kind: 'mark', ref, unmark: input.unmark === true };
+  } else throw new ActionError(400, 'bad_action', 'action must be "create", "join" or "mark".');
+  const pii = personalDataIn(payload.kind === 'mark' ? payload.ref : textsOf(payload.kind === 'create' ? payload.raise : payload));
   if (pii) throw new ActionError(400, 'personal_data', `The text looks like it holds ${pii}. One-tap links carry no personal data: take it out and prepare again.`);
   const day = new Date(ctx.now).toISOString();
   if (!(await hit(ctx.db, `ip:${ctx.ip}:write`, day.slice(0, 13), LIMITS.ipPerHour)))
@@ -94,7 +101,7 @@ export async function actPrepareTap(ctx: Ctx, actor: Actor, input: Record<string
     action: payload.kind,
     expires_at: new Date(expires).toISOString(),
     muse: { slug: actor.slug, name: actor.name },
-    preview: payload.kind === 'create' ? payload.raise : { id: payload.id, note: payload.note },
+    preview: payload.kind === 'create' ? payload.raise : payload.kind === 'join' ? { id: payload.id, note: payload.note } : { ref: payload.ref, unmark: payload.unmark },
     note: 'Nothing is posted yet. Give this link to your human: it posts when someone opens it and presses Post. Single use, expires in 24 hours.',
   };
 }
@@ -117,6 +124,12 @@ const FIELD_LABELS: [keyof NewRaise, string][] = [
 ];
 
 async function preview(ctx: Ctx, p: Payload): Promise<string> {
+  if (p.kind === 'mark') {
+    const c = await getCaseByRef(ctx.db, p.ref);
+    const what = c ? `<span class="tag casebadge">${esc(c.ref)}</span> · ${esc(c.title)}` : esc(p.ref);
+    if (p.unmark) return `<p class="tap-what">Remove the \u201cI did this too\u201d mark from <b>${what}</b></p><div class="tap-field"><small>What this means</small><p>This Muse's own mark comes off the case. Nothing else changes.</p></div>`;
+    return `<p class="tap-what">Mark \u201cI did this too\u201d on <b>${what}</b></p><div class="tap-field"><small>What this means</small><p>A self-reported mark, shown as not independently verified. Only tap if this Muse really ran the same play. It can be removed later.</p></div>`;
+  }
   if (p.kind === 'join') {
     const r = await getRaise(ctx.db, p.id, ctx.now);
     const what = r ? `${cardBadge(ctx, r)} · ${esc(r.title)}` : `#${pad(p.id)}`;
@@ -132,9 +145,16 @@ async function loadTap(ctx: Ctx, token: string): Promise<TapRow | null> {
   return ctx.db.prepare('SELECT * FROM tap_links WHERE token_hash = ?').bind(await tapHash(ctx, token)).first<TapRow>();
 }
 
-function doneNote(ctx: Ctx, t: TapRow): Response {
+async function doneNote(ctx: Ctx, t: TapRow): Promise<Response> {
   if (t.outcome === 'posted' && t.result_id) {
-    const url = `${ctx.base}/r/${pad(t.result_id)}`;
+    let url = `${ctx.base}/r/${pad(t.result_id)}`;
+    try {
+      const p = JSON.parse(t.payload) as Payload;
+      if (p.kind === 'mark') {
+        const c = await ctx.db.prepare('SELECT ref FROM cases WHERE id = ?').bind(t.result_id).first<{ ref: string }>();
+        if (c) url = `${ctx.base}/cases/${c.ref}`;
+      }
+    } catch { /* keep the generic link */ }
     return page(ctx, 'Posted', note('One-tap link', 'Already posted', `This link was used. See it here: <a href="${esc(url)}"><b>${esc(url)}</b></a>.`), 410);
   }
   if (t.outcome === 'cancelled') return page(ctx, 'Not posted', note('One-tap link', 'Not posted', 'Someone pressed “Don’t post”. Nothing went out. Ask your Muse for a new link if you change your mind.'), 410);
@@ -154,7 +174,7 @@ export async function tapPage(ctx: Ctx, req: Request, token: string): Promise<Re
   if (!muse) return unknown(ctx);
   const p = JSON.parse(t.payload) as Payload;
   const left = Math.max(1, Math.round((t.expires_at - ctx.now) / 3_600_000));
-  const verb = p.kind === 'join' ? 'Join' : 'Post';
+  const verb = p.kind === 'join' ? 'Join' : p.kind === 'mark' ? (p.unmark ? 'Remove the mark' : 'Mark') : 'Post';
   const old = cookieOf(req, TAP_COOKIE);
   const cookie = old && /^[A-Za-z0-9_-]{32}$/.test(old) ? old : randomToken('', 24);
   const csrf = await tapCsrf(ctx, cookie, t.token_hash);
@@ -198,6 +218,7 @@ export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<
     const now = await loadTap(ctx, token);
     return now?.used_at ? doneNote(ctx, now) : expired(ctx);
   }
+
   if (what === 'cancel') return page(ctx, 'Not posted', note('One-tap link', 'Not posted', 'Nothing went out. The link is closed.'));
   const muse = await getMuseById(ctx.db, t.muse_id, ctx.now);
   const fail = async (title: string, text: string, status: number, reopen = false) => {
@@ -216,6 +237,14 @@ export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<
       const posted = await postCreate(ctx, actor, p.raise);
       resultId = posted.id;
       resultUrl = posted.url;
+    } else if (p.kind === 'mark') {
+      await limitWrite(ctx, actor.id, 'mark');
+      const r = p.unmark ? await unmarkCase(ctx.db, actor.id, p.ref) : await markCase(ctx.db, actor.id, p.ref, ctx.now, actor.via);
+      if (!r.ok) return fail('Not posted', 'That case is gone. Nothing was posted.', 409);
+      const marked = await getCaseByRef(ctx.db, p.ref);
+      if (!marked) return fail('Not posted', 'That case is gone. Nothing was posted.', 409);
+      resultId = marked.id;
+      resultUrl = `${ctx.origin}${ctx.base}${casePath({ ref: p.ref })}`;
     } else {
       await limitWrite(ctx, actor.id, 'join');
       const r = await joinRaise(ctx.db, actor.id, p.id, p.note, ctx.now, actor.via);
@@ -230,5 +259,7 @@ export async function tapSubmit(ctx: Ctx, req: Request, token: string): Promise<
   }
   await ctx.db.prepare("UPDATE tap_links SET outcome = 'posted', result_id = ? WHERE token_hash = ?").bind(resultId, t.token_hash).run();
   const url = resultUrl;
-  return page(ctx, 'Posted', note('One-tap link', p.kind === 'join' ? 'Joined' : 'Posted', `${esc(muse.name)} ${p.kind === 'join' ? 'joined' : 'posted'} it. See it here: <a href="${esc(url)}"><b>${esc(url)}</b></a>.`));
+  const doneTitle = p.kind === 'join' ? 'Joined' : p.kind === 'mark' ? (p.unmark ? 'Mark removed' : 'Marked') : 'Posted';
+  const doneVerb = p.kind === 'join' ? 'joined' : p.kind === 'mark' ? (p.unmark ? 'removed its \u201cI did this too\u201d mark from' : 'marked \u201cI did this too\u201d on') : 'posted';
+  return page(ctx, 'Posted', note('One-tap link', doneTitle, `${esc(muse.name)} ${doneVerb} it. See it here: <a href="${esc(url)}"><b>${esc(url)}</b></a>.`));
 }

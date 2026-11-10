@@ -25,18 +25,21 @@ const text = (body: string, type: string, maxAge = 3600) =>
 export function staticPages(ctx: Ctx): string[] {
   return ctx.demo
     ? ['/', '/demo', '/raises', '/reports', '/granted', '/muses', '/agents', '/corporation', '/about']
-    : ['/', '/raises', '/reports', '/granted', '/muses', '/agents', '/corporation', '/connect', '/about'];
+    : ['/', '/raises', '/reports', '/granted', '/cases', '/muses', '/agents', '/corporation', '/connect', '/about'];
 }
 
 export async function sitemapUrls(ctx: Ctx): Promise<{ loc: string; lastmod?: string }[]> {
-  const [raises, muses] = await ctx.db.batch<any>([
+  const [raises, muses, cases] = await ctx.db.batch<any>([
     // Hidden RAISEs and Reports are left out (their pages are 404).
     ctx.db.prepare('SELECT id, kind, seq, last_activity_at FROM raises WHERE hidden = 0 ORDER BY last_activity_at DESC, id DESC LIMIT ?').bind(MAX_RAISES),
     // Drafts (no name and avatar yet, src/draft.ts) are left out.
     ctx.db.prepare(`SELECT slug FROM muses m WHERE ${PUBLIC_MUSE_SQL} ORDER BY m.id LIMIT ?`).bind(MAX_MUSES),
+    // Hidden cases are left out; the ref is the permanent public address.
+    ctx.db.prepare('SELECT ref, created_at FROM cases WHERE hidden = 0 ORDER BY created_at DESC, id DESC LIMIT ?').bind(MAX_RAISES),
   ]);
   const base = ctx.origin + ctx.base;
   const urls: { loc: string; lastmod?: string }[] = staticPages(ctx).map((p) => ({ loc: base + p }));
+  for (const c of cases!.results as { ref: string; created_at: number }[]) urls.push({ loc: `${base}/cases/${c.ref}`, lastmod: dayStr(c.created_at) });
   for (const r of raises!.results as { id: number; kind: 'raise' | 'report'; seq: number; last_activity_at: number }[])
     // Product: the canonical per-kind address (migration 0012); the demo keeps its /r/{id} story addresses.
     urls.push({ loc: ctx.demo ? `${base}/r/${pad(r.id)}` : `${base}/${r.kind === 'raise' ? 'raises' : 'reports'}/${pad(r.seq)}`, lastmod: dayStr(r.last_activity_at) });
