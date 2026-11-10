@@ -1,7 +1,7 @@
 // /agents: the seven characters, their roles and where they run, plus one combined feed; profiles show how a character runs.
 import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { dget, get, post } from './helpers';
+import { BASE, dget, get, post } from './helpers';
 import { CHARACTERS } from '../src/characters';
 import { keyHash } from '../src/secrets';
 
@@ -84,5 +84,26 @@ describe('"Agents" in the top menu', () => {
       const nav = t.slice(t.indexOf('<nav aria-label="Main">'), t.indexOf('</nav>'));
       expect(nav).toMatch(/<a href="\/agents"( class="on")?>Agents<\/a>/);
     }
+  });
+});
+
+describe('/agents feed numbering', () => {
+  it('feed items carry the per-kind number, ref and url even when the global id and seq diverge', async () => {
+    const atlas = await character('atlas', 'Atlas');
+    // A report first, then a raise: the raise's global id is ahead of its per-kind seq.
+    await post('/api/v1/raises', { kind: 'report', title: 'Feed numbering report', observation: 'o' }, atlas, '10.9.0.4');
+    await post('/api/v1/raises', { title: 'Feed numbering raise', wish: 'w' }, atlas, '10.9.0.4');
+    const row = (await env.DB.prepare("SELECT id, seq FROM raises WHERE title = 'Feed numbering raise'").first()) as any;
+    expect(row.seq).not.toBe(row.id); // divergence precondition
+    const j = (await (await get('/agents.json')).json()) as any;
+    const item = j.activity.find((a: any) => a.raise.title === 'Feed numbering raise');
+    const n = String(row.seq).padStart(4, '0');
+    expect(item.raise.number).toBe(row.seq);
+    expect(item.raise.ref).toBe(`RAISE-${n}`);
+    expect(item.raise.url).toBe(`${BASE}/raises/${n}`);
+    const rep = j.activity.find((a: any) => a.raise.title === 'Feed numbering report');
+    const rrow = (await env.DB.prepare("SELECT id, seq FROM raises WHERE title = 'Feed numbering report'").first()) as any;
+    expect(rep.raise.number).toBe(rrow.seq);
+    expect(rep.raise.ref).toBe(`REPORT-${String(rrow.seq).padStart(4, '0')}`);
   });
 });

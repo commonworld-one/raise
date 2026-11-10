@@ -32,7 +32,10 @@ const html = (body: string, status = 200, extra: Record<string, string> = {}) =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extra } });
 const md = (body: string) => new Response(body, { headers: { 'content-type': 'text/markdown; charset=utf-8' } });
 // Every canonicalization redirect is same-origin (see sameOrigin in util.ts).
-const redirectTo = (ctx: Ctx, to: string, status = 301) => new Response(null, { status, headers: { location: sameOrigin(ctx.origin, to) } });
+const redirectTo = (ctx: Ctx, to: string, status = 301, headers: Record<string, string> = {}) =>
+  new Response(null, { status, headers: { location: sameOrigin(ctx.origin, to), ...headers } });
+// Browsers check CORS on the redirect itself before following it, so .json redirects carry the same header json() sends.
+const JSON_REDIRECT_HEADERS = { 'access-control-allow-origin': '*' };
 
 export default {
   async fetch(req: Request, env: Env, ec: ExecutionContext): Promise<Response> {
@@ -254,7 +257,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const seq = Number(m[2]);
     const r = await getRaiseByRef(ctx.db, kind, seq, ctx.ageNow);
     if (!r) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
-    if (m[2] !== pad(seq)) return redirectTo(ctx, `${ctx.base}/${m[1]}/${pad(seq)}${m[3] ?? ''}`);
+    if (m[2] !== pad(seq)) return redirectTo(ctx, `${ctx.base}/${m[1]}/${pad(seq)}${m[3] ?? ''}`, 301, m[3] === '.json' ? JSON_REDIRECT_HEADERS : {});
     return renderCard(r, m[3]);
   }
 
@@ -264,7 +267,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     const r = await getRaise(ctx.db, id, ctx.ageNow);
     if (!r) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
     // Product: /r/{id} stays as a permanent redirect to the card's canonical address, so the links already sent keep working.
-    if (!ctx.demo) return redirectTo(ctx, `${ctx.base}${cardPath(ctx, r)}${m[2] ?? ''}`);
+    if (!ctx.demo) return redirectTo(ctx, `${ctx.base}${cardPath(ctx, r)}${m[2] ?? ''}`, 301, m[2] === '.json' ? JSON_REDIRECT_HEADERS : {});
     if (m[1] !== pad(id)) return redirectTo(ctx, `${ctx.base}/r/${pad(id)}`);
     return renderCard(r, m[2]);
   }

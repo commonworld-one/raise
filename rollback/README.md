@@ -36,6 +36,29 @@ quiescence gate:
 4. Re-apply later under the same gate: quiesce writes, apply 0012-0014, deploy the new code,
    lift the gate.
 
+## First rollout (initial deploy of this package)
+
+The same window exists on the way FORWARD: `npm run deploy` applies migrations to raise-prod
+and raise-demo and only then deploys the Worker, and Workers roll out gradually. A create
+served by an OLD isolate between `migrations apply` and full rollout writes `seq = NULL` and
+does not bump `counters`; the new code then shows that card under its global id and
+`/raises/{id}` / `/reports/{id}` lookups (which search `seq`) 404 or land on a different card
+whose valid number equals that id. A code fallback cannot fix that collision safely (the
+id-shaped number can belong to a later, valid card), so the contract is operational, not a
+maintenance feature:
+
+1. Run the first deploy under the same write quiescence gate as rollback (above): gate writes,
+   establish drain by evidence, then `npm run deploy`, then lift the gate.
+2. Post-deploy checks before lifting the gate (run on BOTH raise-prod and raise-demo):
+   - `SELECT COUNT(*) FROM raises WHERE seq IS NULL` must be 0.
+   - counters cover content: for every kind, `counters.seq >= COALESCE((SELECT MAX(seq) FROM raises
+     WHERE kind = counters.kind), 0)` (equality when no card was ever hard-deleted; a counter may
+     legitimately sit above the data, never below).
+3. If the NULL check is >0 (a write slipped past the gate): while still gated, apply
+   `rollback/repair-null-seq.sql` (numbers the strays in id order continuing each kind's
+   sequence and re-seeds counters), then re-run both checks. Verified in test/rollout.test.ts.
+4. Only then lift the gate.
+
 ## Atomicity and re-runnability
 
 - D1's transactional unit exposed to clients is a **batch**; `wrangler d1 execute --file`

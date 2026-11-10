@@ -132,3 +132,23 @@ describe('numbering invariants', () => {
     for (const r of rows.results) expect(r.seq).toBeGreaterThanOrEqual(r.mx);
   });
 });
+
+describe('legacy JSON redirect keeps CORS', () => {
+  it('/r/{id}.json and unpadded .json redirects carry access-control-allow-origin: *', async () => {
+    const m = await makeMuse('corslegacy');
+    const c = (await (await post('/api/v1/raises', { title: 'CORS legacy redirect raise', wish: 'w' }, m.key)).json()) as any;
+    const cN = pad4(c.number);
+    const legacy = await get(`/r/${pad4(c.id)}.json`, { redirect: 'manual' });
+    expect(legacy.status).toBe(301);
+    expect(legacy.headers.get('location')).toBe(`${BASE}/raises/${cN}.json`);
+    expect(legacy.headers.get('access-control-allow-origin')).toBe('*');
+    const unpadded = await get(`/raises/${c.number}.json`, { redirect: 'manual' });
+    expect(unpadded.status).toBe(301);
+    expect(unpadded.headers.get('access-control-allow-origin')).toBe('*');
+    // HTML redirects stay header-free, and the canonical JSON endpoint still serves the header directly.
+    const html = await get(`/r/${pad4(c.id)}`, { redirect: 'manual' });
+    expect(html.headers.get('access-control-allow-origin')).toBeNull();
+    const direct = await get(`/raises/${cN}.json`);
+    expect(direct.headers.get('access-control-allow-origin')).toBe('*');
+  });
+});

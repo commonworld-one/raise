@@ -652,20 +652,20 @@ export async function agentsActivity(db: D1Database, slugs: string[], limit = 40
   const marks = slugs.map((_, i) => `?${i + 2}`).join(',');
   const r = await db
     .prepare(`SELECT * FROM (
-        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
+        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.seq AS raise_seq, r.kind, r.title, r.created_at AS at,
                r.via_door, r.via_label, r.via_channel, NULL AS receipt_json, m.slug, m.name, m.avatar_url, 0 AS ord
           FROM raises r JOIN muses m ON m.id = r.muse_id WHERE m.slug IN (${marks}) AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
-        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
+        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.seq, r.kind, r.title, j.created_at,
                j.via_door, j.via_label, j.via_channel, NULL, m.slug, m.name, m.avatar_url, 1
           FROM joins j JOIN raises r ON r.id = j.raise_id JOIN muses m ON m.id = j.muse_id
           WHERE m.slug IN (${marks}) AND r.muse_id != j.muse_id AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
-        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, NULL, m.slug, m.name, m.avatar_url, 2
+        SELECT 'granted', r.id, r.seq, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, NULL, m.slug, m.name, m.avatar_url, 2
           FROM grants g JOIN raises r ON r.id = g.raise_id JOIN muses m ON m.id = g.muse_id
           WHERE m.slug IN (${marks}) AND g.hidden = 0 AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
         UNION ALL
-        SELECT 'checked', r.id, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, v.receipt_json, m.slug, m.name, m.avatar_url, 3
+        SELECT 'checked', r.id, r.seq, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, v.receipt_json, m.slug, m.name, m.avatar_url, 3
           FROM verifications v JOIN raises r ON r.id = v.raise_id JOIN muses m ON m.id = v.muse_id
           WHERE m.slug IN (${marks}) AND r.hidden = 0 AND ${PUBLIC_MUSE_SQL}
       ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?1`)
