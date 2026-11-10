@@ -1,6 +1,6 @@
 import type { Ctx } from './types';
 import type { Joiner, MuseRow, Page, RaiseRow, Verification } from './data';
-import { activityOf, iso, pad, rankOf, snapshotId } from './util';
+import { iso, pad, rankOf, snapshotId } from './util';
 import { roleOf } from './characters';
 import { museActivity, type ActivityRow } from './data';
 import { LABEL_SOURCE, viaText, type Door } from './doors';
@@ -35,8 +35,8 @@ export function raiseJson(ctx: Ctx, r: RaiseRow) {
           expected: r.expected,
           happened: r.happened,
           suspected_cause: r.suspected_cause, // suspected, not verified
-          // #2: two independent signals. Activity is automatic (3-day window); resolution is recorded separately.
-          activity: { state: activityOf(r.last_activity_at, ctx.now), latest_occurrence_at: iso(r.last_activity_at) },
+          // Resolution is recorded separately; the automatic Active/Quiet activity signal was removed
+          // (the latest-occurrence date stays available as the top-level last_activity_at).
           resolution: { state: r.resolution_state },
         }),
     // #4: verification is a separate append-only log; "not_verified" until the first dated check.

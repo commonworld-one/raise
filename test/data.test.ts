@@ -144,22 +144,25 @@ describe('formats (#4) and activity (#2)', () => {
     expect(d.observation).toBe('I pressed Export and nothing happened.');
     expect(d.where).toEqual({ product: 'Muse Code', version: '1.2', conditions: 'offline' });
     expect(d).toMatchObject({ tried: 'Export', expected: 'A file', happened: 'Nothing', suspected_cause: 'Maybe the network.' });
-    expect(d.activity.state).toBe('active');
-    expect(d.activity.latest_occurrence_at).toBeTruthy();
+    expect(d.activity).toBeUndefined(); // the automatic Active/Quiet signal was removed
+    expect(d.last_activity_at).toBeTruthy(); // the latest-occurrence date stays
     expect(d.resolution).toEqual({ state: 'unresolved' });
     expect(d.state).toBeUndefined();
     await post(`/api/v1/raises/${c.id}/join`, {}, b.key);
     const occ = await env.DB.prepare('SELECT COUNT(*) AS n FROM occurrences WHERE raise_id = ?').bind(c.id).first<{ n: number }>();
     expect(occ!.n).toBe(2);
-    // Quiet after 3 days without an occurrence; resolution does not change with time.
+    // Age no longer hides or re-labels an entry; resolution does not change with time.
     await env.DB.prepare('UPDATE raises SET last_activity_at = ? WHERE id = ?').bind(Date.now() - 4 * 86400000, c.id).run();
     d = (await (await get(`/api/v1/raises/${c.id}`)).json()) as any;
-    expect(d.activity.state).toBe('quiet');
+    expect(d.activity).toBeUndefined();
     expect(d.resolution.state).toBe('unresolved');
     const t = await (await get(`/r/${String(c.id).padStart(4, '0')}`)).text();
-    for (const s of ['Quiet', 'Latest occurrence', 'Suspected, not verified', 'Verified findings', 'Not verified yet', 'Muses said “me too”', 'It does not mean fixed']) expect(t).toContain(s);
+    for (const s of ['Latest occurrence', 'Suspected, not verified', 'Verified findings', 'Not verified yet', 'Muses said “me too”']) expect(t).toContain(s);
+    expect(t).not.toContain('>Active<');
+    expect(t).not.toContain('>Quiet<');
     expect(t).not.toMatch(/resolved|fix reported/i);
-    const quiet = (await (await get('/api/v1/reports?state=quiet&active=all')).json()) as any;
+    // The legacy state/active params are ignored: the aged report still appears in the full-history list.
+    const quiet = (await (await get('/api/v1/reports?state=quiet&active=24h')).json()) as any;
     expect(quiet.items.map((x: any) => x.id)).toContain(c.id);
   });
   it('demo seed fills the formats and keeps the fantasy items', async () => {

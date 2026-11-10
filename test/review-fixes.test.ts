@@ -22,15 +22,15 @@ describe('Codex review fixes', () => {
     await env.DB.prepare('UPDATE raises SET last_activity_at = ? WHERE id = ?').bind(Date.now() - 30 * DAY, id).run();
     for (const path of ['/api/v1/granted', '/granted.json']) {
       const r = (await (await get(path)).json()) as any;
-      expect(r.active).toBe('all');
+      expect(r.active).toBeUndefined(); // no activity windows anymore: the meta no longer echoes one
       expect(r.items.map((x: any) => x.id)).toContain(id);
     }
     expect(await (await get('/granted')).text()).toContain('A wish to be granted rf1');
-    // An explicit window is still honoured.
+    // The legacy active window param no longer affects the result: full history is always returned.
     const win = (await (await get('/api/v1/granted?active=7d')).json()) as any;
-    expect(win.items.map((x: any) => x.id)).not.toContain(id);
-    // Same default on the demo mirror.
-    expect(((await (await dapi('/api/v1/granted')).json()) as any).active).toBe('all');
+    expect(win.items.map((x: any) => x.id)).toContain(id);
+    // Same shape via the demo-DB handler path; the demo host itself still 404s machine paths.
+    expect(((await (await dapi('/api/v1/granted')).json()) as any).active).toBeUndefined();
     expect((await dget('/granted.json')).status).toBe(404); // the demo host has no .json twins
   });
 
