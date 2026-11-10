@@ -92,6 +92,8 @@ table{display:block;overflow-x:auto}}
 @media (min-width:861px){.home-lists>div{display:flex;flex-direction:column}.home-lists .col{flex:1}.home-lists .col .item{flex:1}}
 /* Product home only: stack the two columns before the 861-1100px crush zone. Demo keeps the 860px breakpoint. */
 @media (max-width:1100px){.phome{grid-template-columns:1fr}}
+/* Product home cards: the badge row spans the full card width so ref + category always fit one line. */
+.hitem{flex-wrap:wrap}.hitem .btags{flex-basis:100%;white-space:nowrap;margin-bottom:8px}
 /* live demo numbers */
 .season{margin:6px 0 10px}.livefoot{text-align:center;margin:18px 0 0}
 /* Demo host only: big live headline numbers (src/live.ts headlineBlock) on the home, /granted, /muses, /corporation */

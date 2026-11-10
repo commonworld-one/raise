@@ -160,14 +160,15 @@ export function rowP(ctx: Ctx, x: RaiseRow, live = false): string {
 const row = (ctx: Ctx, x: RaiseRow, live = false) => (x.kind === 'raise' ? rowR(ctx, x, live) : rowP(ctx, x, live));
 
 /** Product home only: compact card with the full title, avatar, sparkline and counts, no metadata lines
- * (reporter/date/voice stay in the catalogs and on the detail pages). Badges sit on two consistent rows:
- * the entry ref on the first, the category (and Granted) on the second. Demo home keeps rowR/rowP. */
+ * (reporter/date/voice stay in the catalogs and on the detail pages). The badge row (.btags) spans the
+ * full card width, so the ref and the category always fit on one line, desktop and phone, untruncated.
+ * Demo home keeps rowR/rowP. */
 export function homeRowR(ctx: Ctx, x: RaiseRow): string {
-  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag raise">${ref(x)}</span></div><div style="margin-top:3px"><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div><div class="t">${esc(x.title)}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item hitem" href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 
 export function homeRowP(ctx: Ctx, x: RaiseRow): string {
-  return `<a class="item" href="${ctx.base}/r/${pad(x.id)}">${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div><span class="tag report">${ref(x)}</span></div><div style="margin-top:3px"><span class="tag">${esc(x.category)}</span></div><div class="t">${esc(x.title)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+  return `<a class="item hitem" href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span></div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
 /** Demo host: a live list's container attribute (the inline liveScript ticks every [data-live-list] on the page). */
 const liveList = (ctx: Ctx, name: string) => (ctx.demo ? ` data-live-list="${name}"` : '');

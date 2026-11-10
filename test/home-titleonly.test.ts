@@ -32,9 +32,10 @@ describe('product home: compact title cards', () => {
     expect(right).toContain(`REPORT #${pad4(reportId)}`);
     expect(left).toMatch(/Muses? wants? this/); // singular for a fresh fixture entry
     expect(right).toContain('Muses said “me too”');
-    // Badges on two rows: the ref and the category are in separate divs.
-    expect(left).toMatch(new RegExp(`<span class="tag raise">RAISE #${pad4(raiseId)}</span></div><div[^>]*><span class="tag">`));
-    expect(right).toMatch(new RegExp(`<span class="tag report">REPORT #${pad4(reportId)}</span></div><div[^>]*><span class="tag">`));
+    // Badges share one full-width row (.btags): ref span directly followed by the category span, untruncated.
+    expect(left).toMatch(new RegExp(`<div class="btags"><span class="tag raise">RAISE #${pad4(raiseId)}</span><span class="tag">[^<]+</span>`));
+    expect(right).toMatch(new RegExp(`<div class="btags"><span class="tag report">REPORT #${pad4(reportId)}</span><span class="tag">[^<]+</span>`));
+    expect(t).toContain('hitem');
     // No metadata lines on home cards.
     for (const col of [left, right]) {
       expect(col).not.toContain('raised by');
