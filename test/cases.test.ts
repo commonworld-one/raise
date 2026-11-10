@@ -224,6 +224,52 @@ describe('case marks', () => {
   });
 });
 
+describe('Codex review fixes', () => {
+  it('marked_by.next advances mp; following the returned URL reaches the next marks page', async () => {
+    const owner = await makeMuse('casenext');
+    const ref = await makeCase(owner.id);
+    const crow = await env.DB.prepare('SELECT id FROM cases WHERE ref = ?').bind(ref).first<{ id: number }>();
+    for (let i = 0; i < 55; i++) {
+      const mu = await env.DB.prepare("INSERT INTO muses (slug, name, client, tagline, avatar_url, created_at) VALUES (?, ?, 'Muse', '', '/avatars/bob.png', ?)").bind(`nextmark${i}`, `Nextmark ${i}`, Date.now()).run();
+      await env.DB.prepare('INSERT INTO case_marks (case_id, muse_id, created_at) VALUES (?, ?, ?)').bind(crow!.id, mu.meta.last_row_id, Date.now() + i).run();
+    }
+    await env.DB.prepare('UPDATE cases SET marks_count = 55 WHERE id = ?').bind(crow!.id).run();
+    const j1 = (await (await get(`/cases/${ref}.json`)).json()) as any;
+    expect(j1.marked_by.total).toBe(55);
+    expect(j1.marked_by.items.length).toBe(50);
+    expect(j1.marked_by.next).toContain('mp=2');
+    const nu = new URL(j1.marked_by.next);
+    const j2 = (await (await get(nu.pathname + nu.search)).json()) as any;
+    expect(j2.marked_by.page).toBe(2);
+    expect(j2.marked_by.items.length).toBe(5);
+    const seen = new Set(j1.marked_by.items.map((x: any) => x.muse.slug ?? x.muse));
+    for (const x of j2.marked_by.items) expect(seen.has(x.muse.slug ?? x.muse)).toBe(false);
+  });
+
+  it('API preflight advertises DELETE so cross-origin clients can unmark', async () => {
+    const r = await get('/api/v1/cases', { method: 'OPTIONS' });
+    expect(r.headers.get('access-control-allow-methods')).toContain('DELETE');
+  });
+
+  it('card avatar stack renders only the newest 3 markers out of many', async () => {
+    const owner = await makeMuse('casestack');
+    const ref = await makeCase(owner.id);
+    const crow = await env.DB.prepare('SELECT id FROM cases WHERE ref = ?').bind(ref).first<{ id: number }>();
+    for (let i = 0; i < 10; i++) {
+      const mu = await env.DB.prepare("INSERT INTO muses (slug, name, client, tagline, avatar_url, created_at) VALUES (?, ?, 'Muse', '', '/avatars/bob.png', ?)").bind(`stackm${i}`, `Stackm ${i}`, Date.now()).run();
+      await env.DB.prepare('INSERT INTO case_marks (case_id, muse_id, created_at) VALUES (?, ?, ?)').bind(crow!.id, mu.meta.last_row_id, 1000 + i).run();
+    }
+    await env.DB.prepare('UPDATE cases SET marks_count = 10 WHERE id = ?').bind(crow!.id).run();
+    const html = await (await get('/cases')).text();
+    expect(html).toContain('10 did this too');
+    expect(html).toContain('Stackm 9');
+    expect(html).toContain('Stackm 8');
+    expect(html).toContain('Stackm 7');
+    expect(html).not.toContain('Stackm 0');
+    expect(html.indexOf('Stackm 9')).toBeLessThan(html.indexOf('Stackm 7'));
+  });
+});
+
 describe('cases over MCP', () => {
   it('the one-tap path adds and removes a mark, with the link stamp and human confirmation page', async () => {
     const m = await makeMuse('casetapper');

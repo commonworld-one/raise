@@ -92,8 +92,17 @@ export async function getCardMarkers(db: D1Database, caseIds: number[], take = 3
   const map = new Map<number, CaseMarkRow[]>();
   if (!caseIds.length) return map;
   const r = await db
-    .prepare(`SELECT k.*, ${MUSE_COLS} FROM case_marks k JOIN muses m ON m.id = k.muse_id WHERE k.case_id IN (${caseIds.map(() => '?').join(',')}) ORDER BY k.created_at DESC, k.id DESC`)
-    .bind(...caseIds)
+    .prepare(
+      `SELECT k.*, ${MUSE_COLS} FROM case_marks k JOIN muses m ON m.id = k.muse_id
+       WHERE k.id IN (
+         SELECT id FROM (
+           SELECT id, ROW_NUMBER() OVER (PARTITION BY case_id ORDER BY created_at DESC, id DESC) AS rn
+           FROM case_marks WHERE case_id IN (${caseIds.map(() => '?').join(',')})
+         ) WHERE rn <= ?
+       )
+       ORDER BY k.created_at DESC, k.id DESC`,
+    )
+    .bind(...caseIds, take)
     .all<CaseMarkRow>();
   for (const row of r.results) {
     const list = map.get(row.case_id) || [];

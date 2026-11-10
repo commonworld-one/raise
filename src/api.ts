@@ -34,7 +34,7 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
     const page = clampInt(q.page, 1, 100000, 1);
     const seg = path.split('/').filter(Boolean); // e.g. ['raises','418','join']
     if (req.method === 'OPTIONS')
-      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS' } });
+      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS' } });
 
     if (req.method === 'GET') {
       if (seg.length === 0)
@@ -72,7 +72,9 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
         const c = await getCaseByRef(ctx.db, seg[1]!);
         if (!c) return json({ error: 'not_found', message: 'No such case.' }, { status: 404 });
         const markers = await getCaseMarkers(ctx.db, c.id, clampInt(q.mp, 1, 100000, 1));
-        return json({ ...caseJson(ctx, c), marked_by: { ...pageJson(ctx, markers, (x) => caseMarkJson(ctx, x), markers.hasMore ? nextUrl(ctx, u, markers.page) : null) } });
+        const next = new URL(u.toString());
+        next.searchParams.set('mp', String(markers.page + 1));
+        return json({ ...caseJson(ctx, c), marked_by: { ...pageJson(ctx, markers, (x) => caseMarkJson(ctx, x), markers.hasMore ? next.toString().replace(u.origin, ctx.origin) : null) } });
       }
       if (seg[0] === 'muses' && seg.length === 1) {
         const r = await listMuses(ctx.db, { ...museParams(q), page }, ctx.now);
