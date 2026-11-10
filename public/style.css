@@ -99,6 +99,10 @@ table{display:block;overflow-x:auto}}
    title and meta. The badge row keeps a 68px lane clear of it; an over-long badge row wraps there
    instead of sliding under the avatar (all current labels fit one line). */
 .citem{position:relative}.citem>.av{position:absolute;top:20px;right:24px}.citem .btags{margin-right:68px;white-space:normal}
+/* Product catalogs (/raises, /reports) on wide screens: two card columns, same breakpoint where the
+   product home goes two-column. A plain .card child (empty state, "nothing for these filters") spans
+   both columns. Demo catalogs and narrower screens keep one stacked column. */
+@media (min-width:1101px){.catlist{display:grid;grid-template-columns:1fr 1fr;gap:14px}.catlist>.card{grid-column:1/-1}}
 /* live demo numbers */
 .season{margin:6px 0 10px}.livefoot{text-align:center;margin:18px 0 0}
 /* Demo host only: big live headline numbers (src/live.ts headlineBlock) on the home, /granted, /muses, /corporation */
