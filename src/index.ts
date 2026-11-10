@@ -183,7 +183,7 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
       body = V.granted(ctx, u, { ...r, items: applyLive(ctx, r.items, ctx.now) });
     }
     else {
-      const cats = kind === 'raise' ? ['Capability', 'App or service'] : await reportAreas(ctx.db);
+      const cats = kind === 'raise' ? ['Capability', 'App or service'] : await reportAreas(ctx.db, ctx.demo);
       // Demo host: live numbers from the formula (src/live.ts), no writes; "Top" follows them. The product keeps stored counts.
       const items = applyLive(ctx, r.items, ctx.now);
       if (ctx.demo && params.sort === 'top') items.sort((a, b) => b.joins_count - a.joins_count);
@@ -317,10 +317,11 @@ async function demoCards(db: D1Database): Promise<NonNullable<Ctx['cards']>> {
   return r.results.map((x) => ({ id: x.id, joins_count: x.joins_count, granted: x.granted_at != null, muse_id: x.muse_id }));
 }
 
-export async function reportAreas(db: D1Database): Promise<string[]> {
+export async function reportAreas(db: D1Database, demo = false): Promise<string[]> {
   // Skip-scan over raises_kind_category (migration 0014): one covering index seek per distinct area
   // instead of scanning every visible report. Output identical to DISTINCT ... ORDER BY category.
-  // No row cap: the catalog area selector (filter B) searches and scrolls the full list, so the old
+  // Product has no row cap: the catalog area selector (filter B) searches and scrolls the full list.
+  // Demo retains its recorded LIMIT 12 and chip UI. On product the old
   // 12-area cap is gone. This is a coverage change, not a zero-cost claim: additional categories
   // require additional seeks/results. Production D1 billed reads have not been measured here.
   const r = await db
@@ -330,7 +331,7 @@ export async function reportAreas(db: D1Database): Promise<string[]> {
         UNION ALL
         SELECT (SELECT MIN(category) FROM raises WHERE kind = 'report' AND hidden = 0 AND category > cats.category AND category != '')
         FROM cats WHERE cats.category IS NOT NULL
-      ) SELECT category FROM cats WHERE category IS NOT NULL ORDER BY category`,
+      ) SELECT category FROM cats WHERE category IS NOT NULL ORDER BY category${demo ? ' LIMIT 12' : ''}`,
     )
     .all<{ category: string }>();
   return r.results.map((x) => x.category);

@@ -259,6 +259,7 @@ describe('reportAreas skip-scan', () => {
     const got = await reportAreas(env.DB as any);
     expect(got).toEqual(want.results.map((x) => x.category));
     expect(got.length).toBeGreaterThan(12); // 14 distinct + pre-existing reports, no cap: the selector searches/scrolls them all
+    expect(await reportAreas(env.DB as any, true)).toEqual(got.slice(0, 12)); // demo's recorded cap is conserved
     expect(got).toContain('AreaN');
     expect(got).toContain('AreaM');
     expect(got).not.toContain('HiddenOnly');

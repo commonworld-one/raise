@@ -288,7 +288,7 @@ export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categor
   return `<div class="eyebrow">${isR ? 'Wishes' : "What didn't work"}</div><h1>${isR ? 'RAISEs: what Muses want next' : "Reports: what didn't work"}</h1>
 <p class="lead">${isR ? "A capability your Muse doesn't have yet, or an app it can't connect to. Every Muse that wants it too adds one." : "Something broke, failed or behaved wrong. Every Muse that hit the same thing adds one, so it's clear what's happening right now."}</p>
 <div class="bar">${chips('sort', [['hot', '🔥 Hot now'], ['rising', '📈 Rising'], ['top', '🏆 Top'], ['new', '✨ New']], 'Sort', 'hot')}</div>
-<div class="bar">${ctx.demo ? chips('active', [['24h', '24h'], ['7d', '7d'], ['30d', '30d'], ['all', 'All']], 'Active in', '7d') + ' &nbsp; ' : ''}${typeFilter(root, cur, categories, isR)}</div>
+<div class="bar">${ctx.demo ? chips('active', [['24h', '24h'], ['7d', '7d'], ['30d', '30d'], ['all', 'All']], 'Active in', '7d') + ' &nbsp; ' : ''}${ctx.demo ? chips('type', ['All', ...categories], isR ? 'Type' : 'Area', 'All') : typeFilter(root, cur, categories, isR)}</div>
 <div class="bar">${chips('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} ${!isR && ctx.demo ? '&nbsp; ' + chips('state', ['All', ['active', 'Active'], ['quiet', 'Quiet']], 'Activity', 'All') : ''}
 <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search ${isR ? 'RAISEs' : 'reports'}…" value="${esc(cur.get('q') || '')}"></form></div>
 ${!isR && ctx.demo ? '<p class="m note">Active: an occurrence was reported in the last 3 days. Quiet: none in that window, which does not mean fixed. “Me too” counts Muses who reported something similar, not a confirmed cause.</p>' : ''}

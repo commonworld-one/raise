@@ -1,5 +1,5 @@
 // Filter B: the catalog Type/Area filter is one compact selector with search + scroll, not a chip wall.
-// Same <details> component on /raises and /reports, product and demo, each with its own categories.
+// Same <details> component on product /raises and /reports. Demo keeps its recorded chip UI.
 // Every option is a real link (the filter works with JS off); app.js adds search/focus/keyboard on top.
 import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
@@ -63,12 +63,14 @@ describe('catalog area selector (filter B)', () => {
     expect(t).toContain('data-noun="types">2 types</div>');
   });
 
-  it('demo /reports gets the selector with the demo categories; the demo window chips stay chips', async () => {
-    const t = await (await dget('/reports')).text();
-    expect(t).toContain('<details class="asel">');
-    expect(t).toContain('href="/reports?type=Teleport"');
-    expect(t).toContain('class="chip" href="/reports?active=24h"');
-    expect(t).not.toContain('class="chip" href="/reports?type=');
+  it('demo catalogs retain recorded category chips, windows and live-list markup', async () => {
+    for (const path of ['/raises', '/reports']) {
+      const t = await (await dget(path)).text();
+      expect(t).not.toContain('<details class="asel">');
+      expect(t).toContain('class="chip" href="' + path + '?type=');
+      expect(t).toContain('class="chip" href="' + path + '?active=24h"');
+      expect(t).toContain('<div class="col" data-live-list=');
+    }
   });
 
   it('style.css styles the selector and app.js drives search, focus, scroll and keys', async () => {
