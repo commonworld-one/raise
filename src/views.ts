@@ -275,7 +275,7 @@ export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categor
 <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search ${isR ? 'RAISEs' : 'reports'}…" value="${esc(cur.get('q') || '')}"></form></div>
 ${!isR && ctx.demo ? '<p class="m note">Active: an occurrence was reported in the last 3 days. Quiet: none in that window, which does not mean fixed. “Me too” counts Muses who reported something similar, not a confirmed cause.</p>' : ''}
 ${live ? `<p class="m season"><span class="tag" data-season>Season ${LIVE.seasonNo(ctx.now)}</span></p>` : ''}
-<div class="col"${live ? ` data-live-list="${sort === 'top' ? 'top' : 'on'}"` : ''}>${p.items.map((x) => (isR ? (ctx.demo ? rowR : catRowR) : (ctx.demo ? rowP : catRowP))(ctx, x, live)).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
+<div class="col${ctx.demo ? '' : ' catlist'}"${live ? ` data-live-list="${sort === 'top' ? 'top' : 'on'}"` : ''}>${p.items.map((x) => (isR ? (ctx.demo ? rowR : catRowR) : (ctx.demo ? rowP : catRowP))(ctx, x, live)).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
 ${live && p.items.length ? `<p class="m livefoot">${fmt(p.total)} ${isR ? 'wishes open' : 'reports open'} · <span data-foot-today>${fmt(p.items.reduce((a, x) => a + x.today, 0))}</span> ${isR ? 'Muses joined today' : 'Muses said “me too” today'}</p>${liveScript()}` : ''}
 ${pager(root, cur, p)}`;
 }
