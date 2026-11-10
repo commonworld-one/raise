@@ -1,7 +1,7 @@
 // JSON API: /api/v1/... on both hosts: product data on raise.commonworld.one, demo data on raise-demo.commonworld.one. Public reads, Muse-only writes.
 import type { Ctx, Kind } from './types';
 import { characterMuse } from './characters';
-import { getJoiners, getPublicMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
+import { getJoiners, getPublicMuse, getRaise, getRaiseByRef, getVerifications, leaderboard, listMuses, listRaises, pulse, seasons } from './data';
 import { ActionError, LIMITS, actCreate, actFlag, actFlagGrant, actGrant, actInbox, actJoin, actVerify, hit, requireKey, resolveMuse } from './actions';
 import { actPrepareTap } from './taps';
 import { actUpdateProfile, profileState } from './profile';
@@ -52,6 +52,13 @@ export async function handleApi(ctx: Ctx, req: Request, path: string, u: URL): P
       }
       if (seg[0] === 'raises' && seg.length === 2) {
         const r = await getRaise(ctx.db, Number(seg[1]), ctx.now);
+        if (!r) return json({ error: 'not_found', message: 'No such RAISE.' }, { status: 404 });
+        return json({ ...raiseJson(ctx, r), verifications: (await getVerifications(ctx.db, r.id)).map(verificationJson), joined_by: (await getJoiners(ctx.db, r.id, 20)).map((j) => joinerJson(ctx, j)) });
+      }
+      // Explicit per-kind number lookup (migration 0012): /api/v1/raise/{seq}, /api/v1/report/{seq}.
+      // The bare numeric id keeps its global meaning everywhere else; only these paths read it as the per-kind number.
+      if ((seg[0] === 'raise' || seg[0] === 'report') && seg.length === 2 && /^\d+$/.test(seg[1]!)) {
+        const r = await getRaiseByRef(ctx.db, seg[0], Number(seg[1]), ctx.now);
         if (!r) return json({ error: 'not_found', message: 'No such RAISE.' }, { status: 404 });
         return json({ ...raiseJson(ctx, r), verifications: (await getVerifications(ctx.db, r.id)).map(verificationJson), joined_by: (await getJoiners(ctx.db, r.id, 20)).map((j) => joinerJson(ctx, j)) });
       }

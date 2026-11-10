@@ -20,6 +20,8 @@ export interface MuseRow {
 }
 export interface RaiseRow {
   id: number; kind: Kind; title: string; body: string; category: string; muse_id: number;
+  /** Immutable public per-kind number (migration 0012); assigned once at creation, never reused. */
+  seq: number;
   created_at: number; last_activity_at: number; joins_count: number;
   granted_at: number | null; granted_by: string | null; granted_note: string | null; granted_link: string | null;
   flags_count: number; hidden: number;
@@ -42,6 +44,8 @@ export interface ListParams {
   granted?: boolean; // true: only granted; false/undefined: exclude granted
   page?: number;
   perPage?: number;
+  /** Item-only callers (pulse): skip the COUNT(*) pass entirely; total/pages/hasMore are unset. */
+  skipCount?: boolean;
 }
 export interface Page<T> { items: T[]; total: number; page: number; perPage: number; pages: number; hasMore: boolean }
 
@@ -76,19 +80,60 @@ export async function listRaises(db: D1Database, p: ListParams, now: number): Pr
 
   const perPage = p.perPage || PER_PAGE;
   const page = Math.max(1, p.page || 1);
-  const sql = `SELECT r.*, m.slug AS muse_slug, m.name AS muse_name, m.client AS muse_client, m.avatar_url AS muse_avatar,
-      COALESCE((SELECT SUM(d.joins) FROM raise_daily d WHERE d.raise_id = r.id AND d.day >= ?), 0) AS week,
+  const museCols = 'm.slug AS muse_slug, m.name AS muse_name, m.client AS muse_client, m.avatar_url AS muse_avatar';
+  const computed = `COALESCE((SELECT SUM(d.joins) FROM raise_daily d WHERE d.raise_id = r.id AND d.day >= ?), 0) AS week,
       COALESCE((SELECT d.joins FROM raise_daily d WHERE d.raise_id = r.id AND d.day = ?), 0) AS today,
-      COALESCE((SELECT SUM(d.joins * 1.0 / (1 + julianday(?) - julianday(d.day))) FROM raise_daily d WHERE d.raise_id = r.id AND d.day >= ?), 0) AS hot
+      COALESCE((SELECT SUM(d.joins * 1.0 / (1 + julianday(?) - julianday(d.day))) FROM raise_daily d WHERE d.raise_id = r.id AND d.day >= ?), 0) AS hot`;
+  const sortKey = p.granted ? 'granted' : p.sort || 'hot';
+  let sql: string;
+  let binds: unknown[];
+  if (sortKey === 'hot' || sortKey === 'rising') {
+    // Two-phase exact ranking (cost guard): the time-decayed formulas are computed only for cards
+    // whose last activity is inside the 7-day window (phase A); every other visible card has
+    // week = today = hot = 0 and forms the zero tail (phase B), so raise_daily probes and the muses
+    // join touch O(active-in-window) rows instead of every visible card of the kind. Invariant this
+    // relies on: every writer that sets last_activity_at also writes raise_daily for the same instant
+    // (creation writes the author join + daily row; join/occurrence write both, same server clock),
+    // so a card with a join in the window always has last_activity_at >= windowStart. The production
+    // preflight (no raise_daily rows inside the window whose raise has last_activity_at older than
+    // the window start) gates rollout; exactness is verified by the full-sequence differential test.
+    const windowStart = new Date(d7 + 'T00:00:00.000Z').getTime();
+    const branch = (cmp: string, withComputed: boolean) =>
+      `SELECT r.*, ${withComputed ? computed : '0 AS week, 0 AS today, 0 AS hot'} FROM raises r${p.client == null ? '' : ' JOIN muses m ON m.id = r.muse_id'} WHERE ${w} AND r.last_activity_at ${cmp} ?`;
+    const innerKeys = sortKey === 'hot' ? 'hot DESC, last_activity_at DESC, id DESC' : 'rising DESC, week DESC, id DESC';
+    const outerKeys = sortKey === 'hot' ? 'page.hot DESC, page.last_activity_at DESC, page.id DESC' : 'page.rising DESC, page.week DESC, page.id DESC';
+    sql = `SELECT page.*, ${museCols} FROM (
+      SELECT u.*, CAST(u.week AS REAL) / MAX(1, u.joins_count - u.week) AS rising FROM (
+        ${branch('>=', true)}
+        UNION ALL
+        ${branch('<', false)}
+      ) u ORDER BY ${innerKeys} LIMIT ? OFFSET ?
+    ) page JOIN muses m ON m.id = page.muse_id ORDER BY ${outerKeys}`;
+    binds = [d7, today, today, d7, ...args, windowStart, ...args, windowStart, perPage, (page - 1) * perPage];
+  } else {
+    sql = `SELECT r.*, ${museCols}, ${computed}
     FROM raises r JOIN muses m ON m.id = r.muse_id
     WHERE ${w} ORDER BY ${order}, r.id DESC LIMIT ? OFFSET ?`;
-  const [rows, cnt] = await db.batch<any>([
-    db.prepare(sql).bind(d7, today, today, d7, ...args, perPage, (page - 1) * perPage),
-    db.prepare(`SELECT COUNT(*) AS n FROM raises r JOIN muses m ON m.id = r.muse_id WHERE ${w}`).bind(...args),
-  ]);
+    binds = [d7, today, today, d7, ...args, perPage, (page - 1) * perPage];
+  }
+  const itemsQuery = db.prepare(sql).bind(...binds);
+  // Cost guards: (1) item-only callers skip the COUNT(*) pass. (2) The COUNT joins muses only when a
+  // Muse-side filter (client) needs it; the join is 1:1 over a NOT NULL FK and cannot change the row
+  // count otherwise. The production orphan preflight (raises without a matching muse must be 0) gates
+  // the rollout of (2); any orphan keeps the join.
+  const [rows, cnt]: any = p.skipCount
+    ? [await itemsQuery.all(), null]
+    : await db.batch<any>([
+        itemsQuery,
+        db.prepare(
+          p.client == null
+            ? `SELECT COUNT(*) AS n FROM raises r WHERE ${w}`
+            : `SELECT COUNT(*) AS n FROM raises r JOIN muses m ON m.id = r.muse_id WHERE ${w}`,
+        ).bind(...args),
+      ]);
   const items = (rows!.results as RaiseRow[]);
   await attachSpark(db, items, now);
-  const total = (cnt!.results[0] as { n: number }).n;
+  const total = cnt ? (cnt.results[0] as { n: number }).n : items.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   return { items, total, page, perPage, pages, hasMore: page < pages };
 }
@@ -126,6 +171,22 @@ export async function getRaise(db: D1Database, id: number, now: number): Promise
       COALESCE((SELECT d.joins FROM raise_daily d WHERE d.raise_id = r.id AND d.day = ?), 0) AS today
       FROM raises r JOIN muses m ON m.id = r.muse_id WHERE r.id = ? AND r.hidden = 0`)
     .bind(d7, today, id)
+    .first<RaiseRow>();
+  if (!row) return null;
+  await attachSpark(db, [row], now);
+  return row;
+}
+
+/** One card by its public per-kind number (migration 0012): RAISE #5 lives at /raises/0005, Report #5 at /reports/0005. */
+export async function getRaiseByRef(db: D1Database, kind: Kind, seq: number, now: number): Promise<RaiseRow | null> {
+  const today = dayStr(now);
+  const d7 = dayStr(now - 6 * DAY_MS);
+  const row = await db
+    .prepare(`SELECT r.*, m.slug AS muse_slug, m.name AS muse_name, m.client AS muse_client, m.avatar_url AS muse_avatar,
+      COALESCE((SELECT SUM(d.joins) FROM raise_daily d WHERE d.raise_id = r.id AND d.day >= ?), 0) AS week,
+      COALESCE((SELECT d.joins FROM raise_daily d WHERE d.raise_id = r.id AND d.day = ?), 0) AS today
+      FROM raises r JOIN muses m ON m.id = r.muse_id WHERE r.kind = ? AND r.seq = ? AND r.hidden = 0`)
+    .bind(d7, today, kind, seq)
     .first<RaiseRow>();
   if (!row) return null;
   await attachSpark(db, [row], now);
@@ -274,10 +335,10 @@ export async function pulse(db: D1Database, now: number): Promise<Pulse> {
   // No activity windows or state filters: hot/rising order by their time-decayed formulas over all entries,
   // and `happening` is the five newest Reports (matching the product home's "Happening now" column).
   const [hot, rising, newest, happening] = await Promise.all([
-    listRaises(db, { kind: 'raise', sort: 'hot', active: 'all', perPage: 5 }, now),
-    listRaises(db, { kind: 'raise', sort: 'rising', active: 'all', perPage: 5 }, now),
-    listRaises(db, { kind: 'raise', sort: 'new', active: 'all', perPage: 5 }, now),
-    listRaises(db, { kind: 'report', sort: 'new', active: 'all', perPage: 5 }, now),
+    listRaises(db, { kind: 'raise', sort: 'hot', active: 'all', perPage: 5, skipCount: true }, now),
+    listRaises(db, { kind: 'raise', sort: 'rising', active: 'all', perPage: 5, skipCount: true }, now),
+    listRaises(db, { kind: 'raise', sort: 'new', active: 'all', perPage: 5, skipCount: true }, now),
+    listRaises(db, { kind: 'report', sort: 'new', active: 'all', perPage: 5, skipCount: true }, now),
   ]);
   return { ...(counts as any), hot: hot.items, rising: rising.items, newest: newest.items, happening: happening.items };
 }
@@ -305,17 +366,20 @@ export interface NewRaise {
 }
 const EXTRA = ['voice_line', 'blocker', 'return_path', 'product', 'version', 'conditions', 'tried', 'expected', 'happened', 'suspected_cause'] as const;
 
-export async function createRaise(db: D1Database, museId: number, x: NewRaise, now: number, via: Via = NO_VIA): Promise<number> {
+export async function createRaise(db: D1Database, museId: number, x: NewRaise, now: number, via: Via = NO_VIA): Promise<{ id: number; seq: number }> {
   // One batch (one D1 transaction): the RAISE row, the author's initial join, the counters and the
   // points commit together, so no grant (or join) can see the RAISE without its author join.
   // Writes are serialized inside the transaction, so the newest row this Muse inserted at `now`
   // (the subquery below) is the one the first statement just created.
   const newId = '(SELECT MAX(id) FROM raises WHERE muse_id = ?1 AND created_at = ?2)';
   const day = dayStr(now);
-  const res = await db.batch<{ id: number }>([
-    db.prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')}, via_door, via_label, via_channel)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ${EXTRA.map(() => '?').join(', ')}, ?, ?, ?) RETURNING id`)
-      .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? ''), via.door, via.label, via.channel),
+  const res = await db.batch<{ id: number; seq: number }>([
+    // Claim the next public per-kind number first, in the same transaction: the atomic counter
+    // UPDATE plus UNIQUE(kind, seq) make a duplicate number impossible, even under parallel creates.
+    db.prepare('INSERT INTO counters (kind, seq) VALUES (?, 1) ON CONFLICT (kind) DO UPDATE SET seq = seq + 1').bind(x.kind),
+    db.prepare(`INSERT INTO raises (kind, title, body, category, muse_id, created_at, last_activity_at, joins_count, ${EXTRA.join(', ')}, via_door, via_label, via_channel, seq)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ${EXTRA.map(() => '?').join(', ')}, ?, ?, ?, (SELECT seq FROM counters WHERE kind = ?)) RETURNING id, seq`)
+      .bind(x.kind, x.title, x.body, x.category, museId, now, now, ...EXTRA.map((k) => x[k] ?? ''), via.door, via.label, via.channel, x.kind),
     // The raising Muse counts as the first Muse who wants it (for a Report: the first occurrence).
     db.prepare(`INSERT INTO joins (raise_id, muse_id, note, created_at, via_door, via_label, via_channel) SELECT ${newId}, ?1, '', ?2, ?4, ?5, ?6`).bind(museId, now, day, via.door, via.label, via.channel),
     db.prepare(`INSERT INTO raise_daily (raise_id, day, joins) SELECT ${newId}, ?3, 1 ON CONFLICT (raise_id, day) DO UPDATE SET joins = joins + 1`).bind(museId, now, day),
@@ -326,7 +390,7 @@ export async function createRaise(db: D1Database, museId: number, x: NewRaise, n
           .bind(museId, now, x.product ?? '', x.version ?? '', x.conditions ?? '')]
       : []),
   ]);
-  return res[0]!.results[0]!.id;
+  return res[1]!.results[0]!;
 }
 
 export type JoinResult = { ok: true; joined: boolean; joins_count: number } | { ok: false; error: 'not_found' | 'granted' };
@@ -482,7 +546,7 @@ export async function flagGrant(db: D1Database, museId: number, grantId: number,
 
 export interface NotificationRow {
   id: number; kind: 'granted'; text: string; created_at: number; read_at: number | null;
-  raise_id: number; raise_title: string; grant_id: number; builder: string; link: string;
+  raise_id: number; raise_seq: number; raise_kind: Kind; raise_title: string; grant_id: number; builder: string; link: string;
 }
 export const INBOX_MAX = 50;
 /** Inbox cursor: the last item's created_at and id, e.g. "1762167000000_42". Opaque to clients. */
@@ -503,7 +567,7 @@ export async function listNotifications(
   const limit = Math.min(INBOX_MAX, Math.max(1, o.limit ?? INBOX_MAX));
   const b = o.before;
   const [rows, cnt] = await db.batch<any>([
-    db.prepare(`SELECT n.id, n.kind, n.text, n.created_at, n.read_at, n.raise_id, r.title AS raise_title, g.id AS grant_id, g.builder, g.link
+    db.prepare(`SELECT n.id, n.kind, n.text, n.created_at, n.read_at, n.raise_id, r.seq AS raise_seq, r.kind AS raise_kind, r.title AS raise_title, g.id AS grant_id, g.builder, g.link
       FROM notifications n JOIN grants g ON g.id = n.grant_id JOIN raises r ON r.id = n.raise_id
       WHERE n.muse_id = ? AND g.hidden = 0 AND r.hidden = 0 ${b ? 'AND (n.created_at < ? OR (n.created_at = ? AND n.id < ?))' : ''}
       ORDER BY n.created_at DESC, n.id DESC LIMIT ?`).bind(museId, ...(b ? [b.at, b.at, b.id] : []), limit + 1),
@@ -535,7 +599,7 @@ export async function markNotificationsRead(db: D1Database, museId: number, ids:
 
 export interface ActivityRow {
   action: 'raised' | 'reported' | 'joined' | 'said_me_too' | 'granted' | 'checked';
-  raise_id: number; kind: Kind; title: string; at: number;
+  raise_id: number; raise_seq: number; kind: Kind; title: string; at: number;
   via_door: string; via_label: string; via_channel: string;
   /** "checked" rows only: the Verification's self-reported usage receipt (src/receipt.ts), else null. */
   receipt_json?: string | null;
@@ -549,18 +613,18 @@ export interface ActivityRow {
 export async function museActivity(db: D1Database, museId: number, limit = 20): Promise<ActivityRow[]> {
   const r = await db
     .prepare(`SELECT * FROM (
-        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.kind, r.title, r.created_at AS at,
+        SELECT CASE r.kind WHEN 'raise' THEN 'raised' ELSE 'reported' END AS action, r.id AS raise_id, r.seq AS raise_seq, r.kind, r.title, r.created_at AS at,
                r.via_door, r.via_label, r.via_channel, NULL AS receipt_json, 0 AS ord
           FROM raises r WHERE r.muse_id = ?1 AND r.hidden = 0
         UNION ALL
-        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.kind, r.title, j.created_at,
+        SELECT CASE r.kind WHEN 'raise' THEN 'joined' ELSE 'said_me_too' END, r.id, r.seq, r.kind, r.title, j.created_at,
                j.via_door, j.via_label, j.via_channel, NULL, 1
           FROM joins j JOIN raises r ON r.id = j.raise_id WHERE j.muse_id = ?1 AND r.muse_id != ?1 AND r.hidden = 0
         UNION ALL
-        SELECT 'granted', r.id, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, NULL, 2
+        SELECT 'granted', r.id, r.seq, r.kind, r.title, g.created_at, g.via_door, g.via_label, g.via_channel, NULL, 2
           FROM grants g JOIN raises r ON r.id = g.raise_id WHERE g.muse_id = ?1 AND g.hidden = 0 AND r.hidden = 0
         UNION ALL
-        SELECT 'checked', r.id, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, v.receipt_json, 3
+        SELECT 'checked', r.id, r.seq, r.kind, r.title, v.checked_at, v.via_door, v.via_label, v.via_channel, v.receipt_json, 3
           FROM verifications v JOIN raises r ON r.id = v.raise_id WHERE v.muse_id = ?1 AND r.hidden = 0
       ) ORDER BY at DESC, ord DESC, raise_id DESC LIMIT ?2`)
     .bind(museId, limit)

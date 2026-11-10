@@ -1,10 +1,10 @@
 // Muse RAISE Worker. Product on raise.commonworld.one (DB), hackathon demo on raise-demo.commonworld.one (DEMO_DB).
 // The hostname picks the database; the paths are the same on both hosts.
 import type { Ctx, Env, Kind } from './types';
-import { getJoiners, getPublicMuse, getRaise, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
+import { getJoiners, getPublicMuse, getRaise, getRaiseByRef, getVerifications, leaderboard, listMuses, listRaises, seasons } from './data';
 import { API_PREFIX, cached, handleApi } from './api';
 import { handleMcp, tools } from './mcp';
-import { activityItem, activityJson, pageJson, museJson, raiseJson, verificationJson } from './serialize';
+import { activityItem, activityJson, cardBadge, cardPath, pageJson, museJson, raiseJson, verificationJson } from './serialize';
 import { isFiltered, listParams, museParams, queryObj } from './params';
 import * as V from './views';
 import { DEMO_REFERENCE_MS, demoSite, isDemoHost, json, pad, productUrl, sameOrigin, seasonOf } from './util';
@@ -116,8 +116,10 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
 
   // Legacy and convenience redirects
   if (path === '/leaderboard') return redirectTo(ctx, `${ctx.base}/corporation${u.search}`);
+  // Demo-only legacy redirect. On the product these paths are now the canonical card pages
+  // with per-kind numbers (migration 0012); their old redirect meaning is gone (accepted tradeoff).
   let m = /^\/(raises|reports)\/(\d+)\/?$/.exec(path);
-  if (m) return redirectTo(ctx, `${ctx.base}/r/${pad(Number(m[2]))}`);
+  if (m && ctx.demo) return redirectTo(ctx, `${ctx.base}/r/${pad(Number(m[2]))}`);
   m = /^(.*)\/page\/1\/?$/.exec(path);
   if (m) return redirectTo(ctx, `${ctx.base}${m[1] || '/'}${u.search}`);
   m = /^(.*\/page\/\d+)$/.exec(path);
@@ -229,23 +231,42 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     return html(lay('The agents', '/agents', V.agentsPage(ctx, feed)));
   }
 
+  // One card renderer, shared by the product's per-kind addresses and the demo's /r/{id}.
+  const renderCard = async (r: NonNullable<Awaited<ReturnType<typeof getRaise>>>, twin: string | undefined) => {
+    const checks = await getVerifications(ctx.db, r.id);
+    if (twin === '.json') return json({ ...raiseJson(ctx, r), verifications: checks.map(verificationJson), joined_by: (await getJoiners(ctx.db, r.id, 20)).map((j) => ({ slug: j.slug, name: j.name, note: j.note })) });
+    if (twin === '.md') return md(V.raiseMd(ctx, r, checks));
+    const joiners = await getJoiners(ctx.db, r.id);
+    // Demo host: the card's numbers come from the same formula as its row in the lists (src/live.ts); the product keeps stored counts.
+    const card = isLive(ctx, r) ? { ...applyLive(ctx, [r], ctx.now)[0]!, week: cardWeek(r.id, ctx.now) } : r;
+    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, card, joiners, checks), {
+      // Plain text: the body's line breaks and section labels collapse to single spaces (esc() runs in the layout).
+      description: r.body.replace(/\s+/g, ' ').trim().slice(0, 160) || r.title,
+      share: { title: `${cardBadge(ctx, r)} · ${r.title}`, type: 'article', ...(ctx.demo ? V.OG_STORY[r.id] : undefined) },
+    }));
+  };
+
+  // Product: the canonical card address carries the immutable per-kind number (migration 0012):
+  // RAISE #5 at /raises/0005, Report #5 at /reports/0005.
+  m = /^\/(raises|reports)\/(\d{1,9})(\.json|\.md)?\/?$/.exec(path);
+  if (m && !ctx.demo) {
+    const kind: Kind = m[1] === 'raises' ? 'raise' : 'report';
+    const seq = Number(m[2]);
+    const r = await getRaiseByRef(ctx.db, kind, seq, ctx.ageNow);
+    if (!r) return notFound(ctx, m[3] === '.json' ? 'json' : 'html');
+    if (m[2] !== pad(seq)) return redirectTo(ctx, `${ctx.base}/${m[1]}/${pad(seq)}${m[3] ?? ''}`);
+    return renderCard(r, m[3]);
+  }
+
   m = /^\/r\/(\d{1,9})(\.json|\.md)?$/.exec(path);
   if (m) {
     const id = Number(m[1]);
     const r = await getRaise(ctx.db, id, ctx.ageNow);
     if (!r) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
-    const checks = await getVerifications(ctx.db, id);
-    if (m[2] === '.json') return json({ ...raiseJson(ctx, r), verifications: checks.map(verificationJson), joined_by: (await getJoiners(ctx.db, id, 20)).map((j) => ({ slug: j.slug, name: j.name, note: j.note })) });
-    if (m[2] === '.md') return md(V.raiseMd(ctx, r, checks));
+    // Product: /r/{id} stays as a permanent redirect to the card's canonical address, so the links already sent keep working.
+    if (!ctx.demo) return redirectTo(ctx, `${ctx.base}${cardPath(ctx, r)}${m[2] ?? ''}`);
     if (m[1] !== pad(id)) return redirectTo(ctx, `${ctx.base}/r/${pad(id)}`);
-    const joiners = await getJoiners(ctx.db, id);
-    // Demo host: the card's numbers come from the same formula as its row in the lists (src/live.ts); the product keeps stored counts.
-    const card = isLive(ctx, r) ? { ...applyLive(ctx, [r], ctx.now)[0]!, week: cardWeek(id, ctx.now) } : r;
-    return html(lay(`${r.title}`, r.kind === 'raise' ? (r.granted_at ? '/granted' : '/raises') : '/reports', V.detail(ctx, card, joiners, checks), {
-      // Plain text: the body's line breaks and section labels collapse to single spaces (esc() runs in the layout).
-      description: r.body.replace(/\s+/g, ' ').trim().slice(0, 160) || r.title,
-      share: { title: `${r.kind === 'raise' ? 'RAISE' : 'REPORT'} #${pad(id)} · ${r.title}`, type: 'article', ...(ctx.demo ? V.OG_STORY[id] : undefined) },
-    }));
+    return renderCard(r, m[2]);
   }
 
   if (path === '/corporation') {
@@ -293,8 +314,19 @@ async function demoCards(db: D1Database): Promise<NonNullable<Ctx['cards']>> {
   return r.results.map((x) => ({ id: x.id, joins_count: x.joins_count, granted: x.granted_at != null, muse_id: x.muse_id }));
 }
 
-async function reportAreas(db: D1Database): Promise<string[]> {
-  const r = await db.prepare("SELECT DISTINCT category FROM raises WHERE kind = 'report' AND hidden = 0 AND category != '' ORDER BY category LIMIT 12").all<{ category: string }>();
+export async function reportAreas(db: D1Database): Promise<string[]> {
+  // Skip-scan over raises_kind_category (migration 0014): one covering index seek per distinct area
+  // instead of scanning every visible report. Output identical to DISTINCT ... ORDER BY category LIMIT 12.
+  const r = await db
+    .prepare(
+      `WITH RECURSIVE cats(category) AS (
+        SELECT MIN(category) FROM raises WHERE kind = 'report' AND hidden = 0 AND category != ''
+        UNION ALL
+        SELECT (SELECT MIN(category) FROM raises WHERE kind = 'report' AND hidden = 0 AND category > cats.category AND category != '')
+        FROM cats WHERE cats.category IS NOT NULL
+      ) SELECT category FROM cats WHERE category IS NOT NULL ORDER BY category LIMIT 12`,
+    )
+    .all<{ category: string }>();
   return r.results.map((x) => x.category);
 }
 

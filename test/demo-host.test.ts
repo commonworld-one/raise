@@ -39,7 +39,7 @@ describe('host -> database', () => {
 
     const m = await makeMuse('hostsplit');
     const c = (await (await post('/api/v1/raises', { title: 'Host split wish here', wish: 'Only on prod.' }, m.key, '10.7.0.2')).json()) as any;
-    expect(c.url.startsWith(`${BASE}/r/`)).toBe(true);
+    expect(c.url.startsWith(`${BASE}/raises/`)).toBe(true); // canonical per-kind address (migration 0012)
     expect(await env.DEMO_DB.prepare('SELECT id FROM raises WHERE title = ?').bind('Host split wish here').first()).toBeNull();
   });
 

@@ -1,7 +1,7 @@
 // Minimal MCP server over streamable HTTP (JSON responses, stateless).
 // POST /mcp on both hosts (product, or demo on raise-demo.commonworld.one). Methods: initialize, ping, tools/list, tools/call.
 import type { Ctx } from './types';
-import { getJoiners, getRaise, getVerifications, listRaises, pulse } from './data';
+import { getJoiners, getRaise, getRaiseByRef, getVerifications, listRaises, pulse } from './data';
 import { ActionError, LIMITS, VERIFY_MAX, actCreate, actGrant, actInbox, actJoin, actVerify, hit, requireKey, resolveMuse } from './actions';
 import { actPrepareTap } from './taps';
 import { ACCESS_PATTERN, accessTokenRow, createClaim, type McpEndpoint } from './oauth-store';
@@ -36,8 +36,14 @@ export function tools(demo: boolean) {
     },
     {
       name: 'get_raise',
-      description: 'Get one RAISE or Report by number: its fields, counters, the verification log (empty means not verified yet) and the latest Muses who joined.',
-      inputSchema: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+      description: 'Get one RAISE or Report: its fields, counters, the verification log (empty means not verified yet) and the latest Muses who joined. Pass id (the global number) or ref (the public per-kind ref like "RAISE-0005" or "REPORT-0012").',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', description: 'Global id, as returned by list_raises / create_raise.' },
+          ref: { type: 'string', description: 'Public per-kind ref, e.g. "RAISE-0005". Ignored when id is set.' },
+        },
+      },
       annotations: { readOnlyHint: true },
     },
     {
@@ -221,7 +227,16 @@ async function callTool(ctx: Ctx, req: Request, name: string, a: Record<string, 
       return toolResult(pageJson(ctx, r, (x) => raiseJson(ctx, x), null, { next_page: r.hasMore ? page + 1 : null }));
     }
     case 'get_raise': {
-      const r = await getRaise(ctx.db, Number(a.id), ctx.now);
+      let r = null;
+      if (a.id != null) {
+        r = await getRaise(ctx.db, Number(a.id), ctx.now);
+      } else if (typeof a.ref === 'string') {
+        const m = /^(raise|report)[-# ]?0*(\d+)$/i.exec(a.ref.trim());
+        if (!m) return toolResult({ error: 'bad_ref', message: 'Use a ref like RAISE-0005 or REPORT-0012.' }, true);
+        r = await getRaiseByRef(ctx.db, m[1]!.toLowerCase() as 'raise' | 'report', Number(m[2]), ctx.now);
+      } else {
+        return toolResult({ error: 'bad_request', message: 'Pass id or ref.' }, true);
+      }
       if (!r) return toolResult({ error: 'not_found', message: 'No such RAISE.' }, true);
       return toolResult({ ...raiseJson(ctx, r), verifications: (await getVerifications(ctx.db, r.id)).map(verificationJson), joined_by: (await getJoiners(ctx.db, r.id, 10)).map((j) => joinerJson(ctx, j)) });
     }

@@ -27,15 +27,23 @@ describe('/sitemap.xml', () => {
     expect(xml).toMatch(/^<\?xml version="1.0" encoding="UTF-8"\?>\n<urlset xmlns="http:\/\/www.sitemaps.org\/schemas\/sitemap\/0.9">/);
     const l = locs(xml);
     for (const p of ['/', '/raises', '/reports', '/granted', '/muses', '/agents', '/corporation', '/connect', '/about']) expect(l).toContain(BASE + p);
-    expect(l).toContain(`${BASE}/r/${pad(shown)}`);
-    expect(l).not.toContain(`${BASE}/r/${pad(hidden)}`);
+    const shownRow = (await env.DB.prepare('SELECT kind, seq FROM raises WHERE id = ?').bind(shown).first<{ kind: string; seq: number }>())!;
+    const hiddenRow = (await env.DB.prepare('SELECT kind, seq FROM raises WHERE id = ?').bind(hidden).first<{ kind: string; seq: number }>())!;
+    const shownUrl = `${BASE}/${shownRow.kind === 'raise' ? 'raises' : 'reports'}/${pad(shownRow.seq)}`;
+    const hiddenUrl = `${BASE}/${hiddenRow.kind === 'raise' ? 'raises' : 'reports'}/${pad(hiddenRow.seq)}`;
+    expect(l).toContain(shownUrl); // canonical per-kind address (migration 0012)
+    expect(l).not.toContain(hiddenUrl);
     expect(l).toContain(`${BASE}/m/sitemapper`);
     expect(l).not.toContain(`${BASE}/m/${draft.slug}`);
     for (const c of CHARACTERS) expect(l).toContain(`${BASE}/m/${c.slug}`);
     expect(new Set(l).size).toBe(l.length);
     expect(l.every((u) => u.startsWith(BASE + '/'))).toBe(true);
     // Every listed page answers 200 (or 301 for nothing: canonical URLs only).
-    for (const u of [`${BASE}/r/${pad(shown)}`, `${BASE}/m/sitemapper`, `${BASE}/agents`]) expect((await get(new URL(u).pathname)).status).toBe(200);
+    for (const u of [shownUrl, `${BASE}/m/sitemapper`, `${BASE}/agents`]) expect((await get(new URL(u).pathname)).status).toBe(200);
+    // /r/{id} stays as a permanent redirect to the canonical address.
+    const rr = await get(`/r/${pad(shown)}`, { redirect: 'manual' });
+    expect(rr.status).toBe(301);
+    expect(rr.headers.get('location')).toBe(shownUrl);
   });
 
   it('demo host: its own data and /demo, on its own origin, no /connect', async () => {
