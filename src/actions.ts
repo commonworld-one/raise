@@ -12,7 +12,7 @@ import { validateReceipt } from './receipt';
 
 /** Strict write limits. Per Muse per UTC day, plus a coarse per-IP hourly ceiling. */
 export const LIMITS = {
-  musePerDay: { create: 5, join: 100, flag: 20, grant: 10, tap: 20, claim: 10, profile: 10, verify: 20 },
+  musePerDay: { create: 5, join: 100, flag: 20, grant: 10, tap: 20, claim: 10, profile: 10, verify: 20, mark: 200 },
   ipPerHour: 60,
 };
 

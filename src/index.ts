@@ -18,6 +18,9 @@ import { CHARACTERS } from './characters';
 import { ConfigError } from './secrets';
 import { serveAvatar } from './profile';
 import { handleDiscovery } from './discovery';
+import { caseCategories, casePath, getCaseByRef, getCaseMarkers, getCardMarkers, listCases } from './cases';
+import { caseJson, caseMarkJson } from './cases';
+import * as CV from './caseviews';
 
 /** CORS preflight for the MCP endpoint (browser-based MCP clients send it before POST with Authorization). */
 export const MCP_PREFLIGHT = {
@@ -203,6 +206,37 @@ async function route(req: Request, env: Env, u: URL, ip: string): Promise<Respon
     if (m[2] === '.json') return cached(json(pageJson(ctx, r, (x) => museJson(ctx, x), r.hasMore ? `${ctx.origin}${ctx.base}/muses/page/${n + 1}.json${u.search}` : null, { list: 'muses' })));
     if (ctx.demo) ctx.cards = await demoCards(ctx.db);
     return cached(html(lay('Meet the Muses', '/muses', V.muses(ctx, u, r))));
+  }
+
+  // Cases catalog: /cases (+ /page/N, .json/.md twins), and one case at /cases/CASE-0001.
+  // New sort only: no Hot until its ranking rules are decided. Product and demo share the code;
+  // the demo host shows its own (empty) database, like every other product page.
+  m = /^\/cases(?:\/page\/(\d+))?(\/|\.json|\.md)?$/.exec(path);
+  if (m) {
+    const n = page(m[1]);
+    const twin = m[2] === '.json' ? 'json' : m[2] === '.md' ? 'md' : 'html';
+    const q = queryObj(u);
+    const r = await listCases(ctx.db, { category: (q.type || q.category || '').trim() || undefined, muse: (q.muse || '').trim() || undefined, q: (q.q || '').slice(0, 100) || undefined, page: n });
+    if (n > 1 && !r.items.length) return notFound(ctx, twin);
+    const root = `${ctx.base}/cases`;
+    if (twin === 'json') return cached(json(pageJson(ctx, r, (x) => caseJson(ctx, x), r.hasMore ? `${ctx.origin}${root}/page/${n + 1}.json${u.search}` : null, { list: 'cases', sort: 'new' })));
+    if (twin === 'md') return cached(md(CV.casesListMd(ctx, r)));
+    const [cats, stacks] = await Promise.all([caseCategories(ctx.db), getCardMarkers(ctx.db, r.items.map((x) => x.id))]);
+    return cached(html(lay(n > 1 ? `Cases · page ${n}` : 'Cases', '/cases', CV.casesCatalog(ctx, u, r, cats, stacks, n), { alternate: `${ctx.origin}${root}/page/${n}.json${u.search}` })));
+  }
+
+  m = /^\/cases\/(CASE-\d{4,})(\.json|\.md)?\/?$/.exec(path);
+  if (m) {
+    const c = await getCaseByRef(ctx.db, m[1]!);
+    if (!c) return notFound(ctx, m[2] === '.json' ? 'json' : 'html');
+    const mp = Math.max(1, Number(u.searchParams.get('mp')) || 1);
+    const markers = await getCaseMarkers(ctx.db, c.id, mp);
+    if (m[2] === '.json') return json({ ...caseJson(ctx, c), marked_by: { ...pageJson(ctx, markers, (x) => caseMarkJson(ctx, x), markers.hasMore ? `${ctx.origin}${ctx.base}${casePath(c)}.json?mp=${mp + 1}` : null) } });
+    if (m[2] === '.md') return md(CV.caseMd(ctx, c, markers));
+    return html(lay(c.title, '/cases', CV.caseDetail(ctx, c, markers), {
+      description: c.story.replace(/\s+/g, ' ').trim().slice(0, 160) || c.title,
+      share: { title: `${c.ref} · ${c.title}`, type: 'article' },
+    }));
   }
 
   m = /^\/m\/([a-z0-9_-]{1,40})(?:\/page\/(\d+))?(\/|\.json|\.md)?$/.exec(path);

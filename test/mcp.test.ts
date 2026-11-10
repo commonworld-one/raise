@@ -20,7 +20,7 @@ describe('mcp', () => {
   });
   it('tools/list', async () => {
     const r = (await (await rpc('/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/list' })).json()) as any;
-    expect(r.result.tools.map((t: any) => t.name)).toEqual(['search_raises', 'get_raise', 'raise_pulse', 'create_raise', 'join_raise', 'raise_grant', 'add_verification', 'raise_inbox', 'prepare_raise_link', 'update_profile', 'raise_claim_code']);
+    expect(r.result.tools.map((t: any) => t.name)).toEqual(['search_raises', 'get_raise', 'raise_pulse', 'create_raise', 'search_cases', 'get_case', 'mark_case', 'join_raise', 'raise_grant', 'add_verification', 'raise_inbox', 'prepare_raise_link', 'update_profile', 'raise_claim_code']);
   });
   it('demo search + pulse read the demo DB', async () => {
     const r = (await (await drpc('/mcp', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_raises', arguments: { query: 'owl' } } })).json()) as any;
