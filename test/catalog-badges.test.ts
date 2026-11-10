@@ -50,6 +50,13 @@ describe('product catalogs: full-width one-line badge row', () => {
     expect(css).toContain('.citem .btags{margin-right:68px;white-space:normal}');
   });
 
+  it('style.css lets over-long badge rows wrap instead of overflowing (home and catalogs)', () => {
+    const css = (env as any).TEST_STYLE_CSS as string;
+    // Shared full-width badge row: no nowrap, so a valid 40-char category wraps on narrow screens.
+    expect(css).toContain('.hitem .btags,.citem .btags{flex-basis:100%;margin-bottom:8px}');
+    expect(css).not.toContain('.hitem .btags,.citem .btags{flex-basis:100%;white-space:nowrap');
+  });
+
   it('demo catalogs keep the original inline-badge rows (conserved)', async () => {
     for (const path of ['/raises', '/reports']) {
       const demo = await (await dget(path)).text();
