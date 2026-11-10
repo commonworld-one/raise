@@ -39,7 +39,9 @@ h1{font-size:clamp(38px,4.6vw,64px);margin:6px 0 14px}h2{font-size:clamp(24px,2.
 .chip.on{background:var(--chip-on);color:var(--chip-on-ink);border-color:var(--chip-on)}.lbl{font-size:12px;color:var(--mute);font-weight:700;margin-right:2px}
 /* Catalog category selector (filter B): one compact select with search + scroll, replaces the chip wall.
    The toggle is a chip; the panel opens under its left edge and overlays the cards. */
-.asel{position:relative;display:inline-block}
+.asel{position:relative;display:inline-block;min-width:0}
+html:not(.js) .asel-q{display:none}
+.asel-t:focus-visible,.asel-i:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .asel-t{display:inline-flex;align-items:center;gap:8px;list-style:none}
 .asel-t::-webkit-details-marker{display:none}
 .asel-v{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

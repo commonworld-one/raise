@@ -267,7 +267,7 @@ export function typeFilter(root: string, cur: URLSearchParams, categories: strin
     return `<a class="asel-i${on ? ' on' : ''}"${on ? ' aria-current="true"' : ''} href="${esc(withQuery(root, cur, 'type', val, LIST_DEFAULTS))}"><span class="asel-k" aria-hidden="true">✓</span><span class="asel-w">${esc(txt)}</span></a>`;
   };
   const items = opt('All', all) + categories.map((c) => opt(c, c)).join('');
-  return `<span class="lbl">${isR ? 'Type' : 'Area'}</span><details class="asel"><summary class="chip asel-t${sel === 'All' ? '' : ' on'}"><span class="asel-v">${esc(sel === 'All' ? all : sel)}</span><span class="asel-a" aria-hidden="true">▾</span></summary><div class="asel-p"><input class="asel-q" type="search" placeholder="Search ${noun}s…" aria-label="Search ${noun}s"><div class="asel-l" role="listbox" aria-label="${isR ? 'Types' : 'Areas'}">${items}</div><div class="asel-n" data-total="${categories.length}" data-noun="${noun}s">${categories.length} ${noun}s</div></div></details>`;
+  return `<span class="lbl">${isR ? 'Type' : 'Area'}</span><details class="asel"><summary class="chip asel-t${sel === 'All' ? '' : ' on'}"><span class="asel-v">${esc(sel === 'All' ? all : sel)}</span><span class="asel-a" aria-hidden="true">▾</span></summary><div class="asel-p"><input class="asel-q" type="search" placeholder="Search ${noun}s…" aria-label="Search ${noun}s"><div class="asel-l" role="group" aria-label="${isR ? 'Types' : 'Areas'}">${items}</div><div class="asel-n" data-total="${categories.length}" data-noun="${noun}s">${categories.length} ${noun}s</div></div></details>`;
 }
 
 export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categories: string[]): string {

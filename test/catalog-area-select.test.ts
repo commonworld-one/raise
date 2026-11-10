@@ -79,7 +79,7 @@ describe('catalog area selector (filter B)', () => {
     expect(css).toContain('.asel-i.on{');
     const js = (env as any).TEST_APP_JS as string;
     expect(js).toContain("querySelectorAll('details.asel')");
-    expect(js).toContain('scrollIntoView');
+    expect(js).toContain('list.scrollTop');
     expect(js).toContain('ArrowDown');
     expect(js).toContain('Escape');
     expect(js).toContain("addEventListener('input'");

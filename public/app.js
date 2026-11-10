@@ -44,7 +44,7 @@
       document.querySelectorAll('details.asel[open]').forEach(function (o) { if (o !== asel) o.open = false; });
       if (q) { q.value = ''; filter(''); q.focus(); }
       var on = asel.querySelector('.asel-i.on');
-      if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+      if (on) { var list = asel.querySelector('.asel-l'); if (list) list.scrollTop = Math.max(0, on.offsetTop - list.offsetTop - list.clientHeight + on.offsetHeight); }
     });
     if (q) q.addEventListener('input', function () { filter(q.value); });
     asel.addEventListener('keydown', function (e) {
@@ -53,6 +53,7 @@
         return;
       }
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if (!asel.open) { e.preventDefault(); asel.open = true; return; }
       var vis = visible();
       if (!vis.length) return;
       e.preventDefault();

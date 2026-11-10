@@ -321,8 +321,8 @@ export async function reportAreas(db: D1Database): Promise<string[]> {
   // Skip-scan over raises_kind_category (migration 0014): one covering index seek per distinct area
   // instead of scanning every visible report. Output identical to DISTINCT ... ORDER BY category.
   // No row cap: the catalog area selector (filter B) searches and scrolls the full list, so the old
-  // 12-area cap that kept the chip wall bounded is gone. Reads stay proportional to the number of
-  // distinct areas, one seek each (6 on prod today), not to the number of reports.
+  // 12-area cap is gone. This is a coverage change, not a zero-cost claim: additional categories
+  // require additional seeks/results. Production D1 billed reads have not been measured here.
   const r = await db
     .prepare(
       `WITH RECURSIVE cats(category) AS (
