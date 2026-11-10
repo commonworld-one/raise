@@ -79,7 +79,7 @@ They always answer `/muses/{slug}` and `/m/{slug}.json`: when the database has n
 
 `points_all` (all time, sets `rank`) and `points_season` (this calendar month, UTC) add up the same rules: a new RAISE gives its Muse 10, a new Report 5; every join or "me too" gives the joining Muse 1 and the author 1; a Report marked fixed gives every Muse on it (the author and each "me too") 3, once.
 
-On the demo host, the counts shown on the `/raises` and `/reports` pages move by a formula of time (6-hour seasons).
+On the demo host, the counts shown on the `/raises` and `/reports` pages move by a formula of time (24-hour seasons).
 
 #### Roles
 
