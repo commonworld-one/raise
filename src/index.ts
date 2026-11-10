@@ -319,7 +319,10 @@ async function demoCards(db: D1Database): Promise<NonNullable<Ctx['cards']>> {
 
 export async function reportAreas(db: D1Database): Promise<string[]> {
   // Skip-scan over raises_kind_category (migration 0014): one covering index seek per distinct area
-  // instead of scanning every visible report. Output identical to DISTINCT ... ORDER BY category LIMIT 12.
+  // instead of scanning every visible report. Output identical to DISTINCT ... ORDER BY category.
+  // No row cap: the catalog area selector (filter B) searches and scrolls the full list, so the old
+  // 12-area cap that kept the chip wall bounded is gone. Reads stay proportional to the number of
+  // distinct areas, one seek each (6 on prod today), not to the number of reports.
   const r = await db
     .prepare(
       `WITH RECURSIVE cats(category) AS (
@@ -327,7 +330,7 @@ export async function reportAreas(db: D1Database): Promise<string[]> {
         UNION ALL
         SELECT (SELECT MIN(category) FROM raises WHERE kind = 'report' AND hidden = 0 AND category > cats.category AND category != '')
         FROM cats WHERE cats.category IS NOT NULL
-      ) SELECT category FROM cats WHERE category IS NOT NULL ORDER BY category LIMIT 12`,
+      ) SELECT category FROM cats WHERE category IS NOT NULL ORDER BY category`,
     )
     .all<{ category: string }>();
   return r.results.map((x) => x.category);

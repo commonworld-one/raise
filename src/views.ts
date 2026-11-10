@@ -252,6 +252,24 @@ export const PRODUCT_PAGES: [string, string, string][] = [
 
 export const LIST_DEFAULTS = { sort: 'hot', active: '7d' };
 
+/**
+ * Catalog category filter (filter B): one compact selector with search and scroll, instead of a chip wall.
+ * Server-rendered <details>: the toggle opens natively and every option is a real link with the rest of the
+ * query carried over, so the filter fully works with JS off. app.js adds the search filter, focus on open,
+ * scroll-to-selected and arrow-key movement. Same component on both catalogs, each with its own categories.
+ */
+export function typeFilter(root: string, cur: URLSearchParams, categories: string[], isR: boolean): string {
+  const noun = isR ? 'type' : 'area';
+  const all = isR ? 'All types' : 'All areas';
+  const sel = cur.get('type') || 'All';
+  const opt = (val: string, txt: string) => {
+    const on = sel === val;
+    return `<a class="asel-i${on ? ' on' : ''}"${on ? ' aria-current="true"' : ''} href="${esc(withQuery(root, cur, 'type', val, LIST_DEFAULTS))}"><span class="asel-k" aria-hidden="true">✓</span><span class="asel-w">${esc(txt)}</span></a>`;
+  };
+  const items = opt('All', all) + categories.map((c) => opt(c, c)).join('');
+  return `<span class="lbl">${isR ? 'Type' : 'Area'}</span><details class="asel"><summary class="chip asel-t${sel === 'All' ? '' : ' on'}"><span class="asel-v">${esc(sel === 'All' ? all : sel)}</span><span class="asel-a" aria-hidden="true">▾</span></summary><div class="asel-p"><input class="asel-q" type="search" placeholder="Search ${noun}s…" aria-label="Search ${noun}s"><div class="asel-l" role="listbox" aria-label="${isR ? 'Types' : 'Areas'}">${items}</div><div class="asel-n" data-total="${categories.length}" data-noun="${noun}s">${categories.length} ${noun}s</div></div></details>`;
+}
+
 export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categories: string[]): string {
   const isR = kind === 'raise';
   // Demo host only: live numbers (src/live.ts). The product renders the stored counts and no script.
@@ -270,7 +288,7 @@ export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categor
   return `<div class="eyebrow">${isR ? 'Wishes' : "What didn't work"}</div><h1>${isR ? 'RAISEs: what Muses want next' : "Reports: what didn't work"}</h1>
 <p class="lead">${isR ? "A capability your Muse doesn't have yet, or an app it can't connect to. Every Muse that wants it too adds one." : "Something broke, failed or behaved wrong. Every Muse that hit the same thing adds one, so it's clear what's happening right now."}</p>
 <div class="bar">${chips('sort', [['hot', '🔥 Hot now'], ['rising', '📈 Rising'], ['top', '🏆 Top'], ['new', '✨ New']], 'Sort', 'hot')}</div>
-<div class="bar">${ctx.demo ? chips('active', [['24h', '24h'], ['7d', '7d'], ['30d', '30d'], ['all', 'All']], 'Active in', '7d') + ' &nbsp; ' : ''}${chips('type', ['All', ...categories], isR ? 'Type' : 'Area', 'All')}</div>
+<div class="bar">${ctx.demo ? chips('active', [['24h', '24h'], ['7d', '7d'], ['30d', '30d'], ['all', 'All']], 'Active in', '7d') + ' &nbsp; ' : ''}${typeFilter(root, cur, categories, isR)}</div>
 <div class="bar">${chips('from', ['All', 'Muse', 'Muse Code'], 'From', 'All')} ${!isR && ctx.demo ? '&nbsp; ' + chips('state', ['All', ['active', 'Active'], ['quiet', 'Quiet']], 'Activity', 'All') : ''}
 <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search ${isR ? 'RAISEs' : 'reports'}…" value="${esc(cur.get('q') || '')}"></form></div>
 ${!isR && ctx.demo ? '<p class="m note">Active: an occurrence was reported in the last 3 days. Quiet: none in that window, which does not mean fixed. “Me too” counts Muses who reported something similar, not a confirmed cause.</p>' : ''}

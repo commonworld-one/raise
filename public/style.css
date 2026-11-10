@@ -37,6 +37,24 @@ h1{font-size:clamp(38px,4.6vw,64px);margin:6px 0 14px}h2{font-size:clamp(24px,2.
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
 .chip{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-weight:600;font-size:13px;cursor:pointer;user-select:none}
 .chip.on{background:var(--chip-on);color:var(--chip-on-ink);border-color:var(--chip-on)}.lbl{font-size:12px;color:var(--mute);font-weight:700;margin-right:2px}
+/* Catalog category selector (filter B): one compact select with search + scroll, replaces the chip wall.
+   The toggle is a chip; the panel opens under its left edge and overlays the cards. */
+.asel{position:relative;display:inline-block}
+.asel-t{display:inline-flex;align-items:center;gap:8px;list-style:none}
+.asel-t::-webkit-details-marker{display:none}
+.asel-v{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asel-a{font-size:10px;transition:transform .15s}
+.asel[open] .asel-a{transform:rotate(180deg)}
+.asel-p{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:300px;max-width:calc(100vw - 32px);padding:10px;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 34px rgba(32,37,34,.18);color:var(--ink);font-weight:400;text-align:left}
+.asel-q{width:100%;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:13px}
+.asel-l{display:flex;flex-direction:column;gap:2px;margin-top:8px;max-height:260px;overflow-y:auto}
+.asel-i{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;font-weight:600;font-size:13px;color:var(--ink)}
+.asel-i:hover{background:var(--surface)}
+.asel-i.on{background:var(--chip-on);color:var(--chip-on-ink)}
+.asel-i[hidden]{display:none}
+.asel-k{width:14px;flex:none;visibility:hidden;font-size:11px}
+.asel-i.on .asel-k{visibility:visible}
+.asel-n{margin-top:8px;padding:0 4px;text-align:right;font-size:11.5px;font-weight:600;color:var(--mute)}
 input.q{padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);min-width:260px;font:inherit}
 
 .stat{font-family:Manrope;font-size:42px;font-weight:800;letter-spacing:-1.5px}.big{font-size:60px}
@@ -79,6 +97,7 @@ html:not(.js) nav{flex-direction:row;flex-wrap:nowrap;overflow-x:auto}html:not(.
 .menu .theme,.menu .btn{align-self:flex-start}}
 @media (max-width:860px){.grid2,.grid3{grid-template-columns:1fr}.item .spark{display:none}.num{min-width:70px}.parade img{width:64px;height:64px}main{padding:24px 16px}.band{flex-direction:column;text-align:center}
 .parade{flex-wrap:wrap}input.q{min-width:0;width:100%}form.inline{display:block;width:100%}
+.asel{flex:1}.asel-p{left:0;right:0;width:auto}
 .av.xl{width:96px;height:96px}
 table{display:block;overflow-x:auto}}
 @media (max-width:420px){.parade img{width:48px;height:48px}.item{gap:10px;padding:12px}.num{min-width:58px;font-size:18px}h1{font-size:34px}.big{font-size:48px}}
