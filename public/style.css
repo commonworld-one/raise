@@ -94,6 +94,10 @@ table{display:block;overflow-x:auto}}
 @media (max-width:1100px){.phome{grid-template-columns:1fr}}
 /* Product home cards: the badge row spans the full card width so ref + category always fit one line. */
 .hitem,.citem{flex-wrap:wrap}.hitem .btags,.citem .btags{flex-basis:100%;white-space:nowrap;margin-bottom:8px}
+/* Product catalog cards: the avatar parks in the free top-right corner, giving its width back to the
+   title and meta. The badge row keeps a 68px lane clear of it; an over-long badge row wraps there
+   instead of sliding under the avatar (all current labels fit one line). */
+.citem{position:relative}.citem>.av{position:absolute;top:20px;right:24px}.citem .btags{margin-right:68px;white-space:normal}
 /* live demo numbers */
 .season{margin:6px 0 10px}.livefoot{text-align:center;margin:18px 0 0}
 /* Demo host only: big live headline numbers (src/live.ts headlineBlock) on the home, /granted, /muses, /corporation */

@@ -43,6 +43,13 @@ describe('product catalogs: full-width one-line badge row', () => {
     expect(t).toContain('Muses said “me too”');
   });
 
+  it('style.css parks the catalog avatar top-right with a protected badge lane', () => {
+    const css = (env as any).TEST_STYLE_CSS as string;
+    expect(css).toContain('.citem{position:relative}');
+    expect(css).toContain('.citem>.av{position:absolute;top:20px;right:24px}');
+    expect(css).toContain('.citem .btags{margin-right:68px;white-space:normal}');
+  });
+
   it('demo catalogs keep the original inline-badge rows (conserved)', async () => {
     for (const path of ['/raises', '/reports']) {
       const demo = await (await dget(path)).text();
