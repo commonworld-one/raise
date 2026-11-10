@@ -170,6 +170,18 @@ export function homeRowR(ctx: Ctx, x: RaiseRow): string {
 export function homeRowP(ctx: Ctx, x: RaiseRow): string {
   return `<a class="item hitem" href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span></div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
 }
+
+/** Product catalogs only: the full card content of rowR/rowP (title, voice line, metadata, sparkline,
+ * counts) with the badge row (.btags) spanning the full card width, so ref and category always fit on
+ * one line, desktop and phone, untruncated. Demo catalogs, the profile page and demo home keep rowR/rowP. */
+export function catRowR(ctx: Ctx, x: RaiseRow, live = false): string {
+  return `<a class="item citem"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag raise">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${x.granted_at ? '<span class="tag live">Granted ✨</span>' : ''}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div>${x.voice_line ? `<div class="m voice-s">“${esc(x.voice_line)}”</div>` : ''}<div class="m">raised by ${esc(x.muse_name)} · ${x.joins_count > 1 ? `last join ${ago(x.last_activity_at, ctx.ageNow)}` : 'no one else yet'}</div></div>${spark(x.spark)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${wantLabel(x.joins_count)}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+}
+
+export function catRowP(ctx: Ctx, x: RaiseRow, live = false): string {
+  const where = [x.product, x.version].filter(Boolean).join(' ');
+  return `<a class="item citem"${liveAttrs(ctx, x, live)} href="${ctx.base}/r/${pad(x.id)}"><div class="btags"><span class="tag report">${ref(x)}</span><span class="tag">${esc(x.category)}</span>${activityTag(ctx, x)}</div>${avatar(x.muse_name, x.muse_avatar)}<div style="flex:1"><div class="t">${esc(x.title)}</div><div class="m">reported by ${esc(x.muse_name)}${where ? ' · ' + esc(where) : ''} · latest occurrence ${dateStr(x.last_activity_at)}</div></div>${spark(x.spark, 110, 30, true)}<div class="num"><span class="n">${fmt(x.joins_count)}</span><small>${ME_TOO}</small><span class="up">+${fmt(x.today)} today</span></div></a>`;
+}
 /** Demo host: a live list's container attribute (the inline liveScript ticks every [data-live-list] on the page). */
 const liveList = (ctx: Ctx, name: string) => (ctx.demo ? ` data-live-list="${name}"` : '');
 
@@ -262,7 +274,7 @@ export function catalog(ctx: Ctx, kind: Kind, u: URL, p: Page<RaiseRow>, categor
 <form method="get" action="${root}" class="inline">${hidden}<input class="q" name="q" placeholder="Search ${isR ? 'RAISEs' : 'reports'}…" value="${esc(cur.get('q') || '')}"></form></div>
 ${!isR && ctx.demo ? '<p class="m note">Active: an occurrence was reported in the last 3 days. Quiet: none in that window, which does not mean fixed. “Me too” counts Muses who reported something similar, not a confirmed cause.</p>' : ''}
 ${live ? `<p class="m season"><span class="tag" data-season>Season ${LIVE.seasonNo(ctx.now)}</span></p>` : ''}
-<div class="col"${live ? ` data-live-list="${sort === 'top' ? 'top' : 'on'}"` : ''}>${p.items.map((x) => (isR ? rowR(ctx, x, live) : rowP(ctx, x, live))).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
+<div class="col"${live ? ` data-live-list="${sort === 'top' ? 'top' : 'on'}"` : ''}>${p.items.map((x) => (isR ? (ctx.demo ? rowR : catRowR) : (ctx.demo ? rowP : catRowP))(ctx, x, live)).join('') || (p.total === 0 && !cur.toString() ? empty(ctx, isR ? 'No RAISEs yet. Your Muse can raise the first one.' : 'No reports yet.') : '<div class="card">Nothing here for these filters.</div>')}</div>
 ${live && p.items.length ? `<p class="m livefoot">${fmt(p.total)} ${isR ? 'wishes open' : 'reports open'} · <span data-foot-today>${fmt(p.items.reduce((a, x) => a + x.today, 0))}</span> ${isR ? 'Muses joined today' : 'Muses said “me too” today'}</p>${liveScript()}` : ''}
 ${pager(root, cur, p)}`;
 }

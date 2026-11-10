@@ -1,0 +1,44 @@
+// Muse RAISE: one Worker for the site, the demo, the JSON API and the MCP endpoint.
+// raise.commonworld.one = product (DB), raise-demo.commonworld.one = hackathon demo (DEMO_DB), chosen by hostname.
+// Deploy: Cloudflare Workers Builds on `main`, deploy command `npm run deploy` (see README "Deploy").
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "raise",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  // llms.txt and docs/api.md are bundled as text for /llms-full.txt (src/discovery.ts).
+  "rules": [{ "type": "Text", "globs": ["**/*.md", "**/*.txt"], "fallthrough": true }],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      // Real data only. Starts empty: no seed, no example numbers.
+      "binding": "DB",
+      "database_name": "raise-prod",
+      "database_id": "42023526-f5f7-4478-be99-49aa0b43f442",
+      "migrations_dir": "migrations"
+    },
+    {
+      // Hackathon demo data, served on raise-demo.commonworld.one. Seeded from seed/demo.sql.
+      "binding": "DEMO_DB",
+      "database_name": "raise-demo",
+      "database_id": "6d1f663f-873f-4aac-8ead-fd8ccbdea672",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Per-IP request limit for every request that reaches the Worker (pages, API, MCP, OAuth): 120 per minute per IP,
+  // checked in src/index.ts (429 + Retry-After: 60). Static files in public/ never reach the Worker and do not count.
+  // The limit is per Cloudflare location and approximate (Workers Rate Limiting). namespace_id is any integer
+  // string unique within the account. Tests override it with a very high limit (vitest.config.ts).
+  "ratelimits": [
+    { "name": "READ_LIMITER", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }
+  ],
+  "vars": {
+    "SITE_URL": "https://raise.commonworld.one",
+    "DEMO_SITE_URL": "https://raise-demo.commonworld.one",
+    "REPO_URL": "https://github.com/commonworld-one/raise"
+  }
+}
