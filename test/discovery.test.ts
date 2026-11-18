@@ -63,14 +63,15 @@ describe('/sitemap.xml', () => {
 });
 
 describe('/robots.txt', () => {
-  it('allows all and names the host\'s own sitemap', async () => {
+  it('allows all on both hosts; only the product names a sitemap', async () => {
     for (const [r, origin] of [[await get('/robots.txt'), BASE], [await dget('/robots.txt'), DEMO]] as const) {
       expect(r.status).toBe(200);
       expect(r.headers.get('content-type')).toContain('text/plain');
       const t = await r.text();
       expect(t).toContain('User-agent: *');
       expect(t).toContain('Allow: /');
-      expect(t).toContain(`Sitemap: ${origin}/sitemap.xml`);
+      if (origin === BASE) expect(t).toContain(`Sitemap: ${origin}/sitemap.xml`);
+      else expect(t).not.toContain('Sitemap:');
     }
   });
 });
