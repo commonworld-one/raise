@@ -121,15 +121,22 @@ describe('demo bar and links', () => {
     }
   });
 
-  it('demo pages: noindex and a self canonical; product pages unchanged', async () => {
+  it('demo pages: noindex and a self canonical; product pages: a self canonical, no noindex', async () => {
     const t = await (await dget('/raises?sort=top')).text();
     expect(t).toContain('<meta name="robots" content="noindex">');
     expect(t).toContain(`<link rel="canonical" href="${DEMO}/raises">`);
     const p = await (await get('/raises')).text();
     expect(p).not.toContain('noindex');
-    expect(p).not.toContain('rel="canonical"');
+    expect(p).toContain(`<link rel="canonical" href="${BASE}/raises">`);
     expect(p).not.toContain('Hackathon demo');
-    expect(await (await get('/raises?sort=top')).text()).toContain('<meta name="robots" content="noindex,follow">');
+    const filtered = await (await get('/raises?sort=top')).text();
+    expect(filtered).toContain('<meta name="robots" content="noindex,follow">');
+    expect(filtered).not.toContain('rel="canonical"');
+    // The self canonical carries the path without the query; a 404 page has none.
+    expect(await (await get('/m/forge')).text()).toContain(`<link rel="canonical" href="${BASE}/m/forge">`);
+    const nf = await get('/no-such-page');
+    expect(nf.status).toBe(404);
+    expect(await nf.text()).not.toContain('rel="canonical"');
   });
 
   it('product: header "▶ Demo" and footer link go to the demo host', async () => {

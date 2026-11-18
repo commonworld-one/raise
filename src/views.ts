@@ -86,7 +86,7 @@ export function layout(ctx: Ctx, o: LayoutOpts): string {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(o.title)}${o.title.includes('Muse RAISE') ? '' : ' · Muse RAISE'}${ctx.demo ? ' (demo)' : ''}</title>
 <meta name="description" content="${esc(o.description || DEFAULT_DESCRIPTION)}">
-${ctx.demo ? `<meta name="robots" content="noindex">\n<link rel="canonical" href="${esc(ctx.origin + ctx.path)}">` : o.noindex ? '<meta name="robots" content="noindex,follow">' : ''}
+${ctx.demo ? `<meta name="robots" content="noindex">\n<link rel="canonical" href="${esc(ctx.origin + ctx.path)}">` : o.noindex ? '<meta name="robots" content="noindex,follow">' : `<link rel="canonical" href="${esc(ctx.origin + ctx.path)}">`}
 ${o.alternate && !ctx.demo ? `<link rel="alternate" type="application/json" href="${esc(o.alternate)}">` : ''}
 ${socialMeta(ctx, { title: o.title, description: o.description || DEFAULT_DESCRIPTION, url: ctx.origin + ctx.path, ...OG_DEFAULT, type: 'website', ...o.share })}
 ${ICON_LINKS}
