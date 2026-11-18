@@ -1,6 +1,6 @@
 // Discovery files for crawlers and agents (#21), on both hosts, each from its own database:
 //   /sitemap.xml   every public page: the lists, each visible RAISE/Report and each public Muse profile
-//   /robots.txt    allow all (except old /demo/ links) + the host's own Sitemap line
+//   /robots.txt    allow all (except old /demo/ links) + the product's Sitemap line (the demo robots.txt has none)
 //   /llms-full.txt llms.txt followed by docs/api.md, as plain text (bundled as text modules, wrangler.jsonc "rules")
 //   /openapi.json  OpenAPI 3.1 of the JSON API v1 (src/openapi.ts)
 // They go through the same per-IP READ_LIMITER as every other Worker route (src/index.ts).
@@ -59,7 +59,9 @@ export async function sitemap(ctx: Ctx): Promise<Response> {
 }
 
 export function robots(ctx: Ctx): Response {
-  return text(`User-agent: *\nDisallow: /demo/\nAllow: /\n\nSitemap: ${ctx.origin}/sitemap.xml\n`, 'text/plain', 86400);
+  // The demo pages are all noindex, so its robots.txt does not advertise a sitemap; crawling stays open so the noindex can be read.
+  const sitemapLine = ctx.demo ? '' : `\nSitemap: ${ctx.origin}/sitemap.xml\n`;
+  return text(`User-agent: *\nDisallow: /demo/\nAllow: /\n${sitemapLine}`, 'text/plain', 86400);
 }
 
 /** llms.txt, then the full API reference (docs/api.md). The same text on both hosts. */

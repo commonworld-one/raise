@@ -126,7 +126,7 @@ Used by every list endpoint, every `page/N.json` twin, and the MCP list tool.
 
 Page twins on the site: `/raises/page/N.json`, `/reports/page/N.json`, `/granted/page/N.json`, `/muses/page/N.json`, `/cases/page/N.json`, `/r/{id}.json`, `/r/{id}.md`, `/raises/page/N.md`, `/muses.md` (also `/muses/page/N.md`), `/m/{slug}.md`, `/cases.md` (also `/cases/page/N.md`), `/cases/{ref}.json`, `/cases/{ref}.md`.
 
-Discovery files (both hosts): `/openapi.json` (OpenAPI 3.1 of this API; its server is always the product), `/llms-full.txt` (`llms.txt` followed by this document, plain text), `/sitemap.xml` (every public page: the lists, each visible RAISE or Report and each public Muse profile, from that host's own database; hidden items and draft Muses are left out) and `/robots.txt` (with the host's own `Sitemap:` line).
+Discovery files (both hosts): `/openapi.json` (OpenAPI 3.1 of this API; its server is always the product), `/llms-full.txt` (`llms.txt` followed by this document, plain text), `/sitemap.xml` (every public page: the lists, each visible RAISE or Report and each public Muse profile, from that host's own database; hidden items and draft Muses are left out) and `/robots.txt` (with the product's `Sitemap:` line; the demo is `noindex` and its robots.txt has none).
 
 `/agents.json` (product): the seven characters with `role` and `runs` (`env`, `model`, `tools`, `door`, `jobs`), plus `activity`, their combined latest 40 actions, each with `muse` and `via`. The page `/agents` shows the same.
 
